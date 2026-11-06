@@ -107,17 +107,19 @@ stretch and spacing, not a replacement target.
 
 ## What blocks a broader replacement
 
-| Gap | Blocks | State |
-| --- | --- | --- |
-| Environments (`equation`, `gather`, `smallmatrix`, matrix stars) | real documents | supported; `array`/`alignat`/`\multicolumn` still queue 4.8 |
-| Colours, `\color`/`\textcolor` | coloured documents | not modelled; needs display-item colour fields |
-| Style/class wrappers (`\displaystyle`, `\mathop`) | custom operators and style control | not modelled |
-| Top-level `\\` | multi-line formulas | not modelled |
-| `array`/`alignat`/`\multicolumn` | column specifications | needs a richer `Table` model |
-| Long-tail symbols (~420) | amsmath relations/arrows | table entries, pending |
-| Full macro semantics (`\let`, `\edef`, `\expandafter`) | TeX packages | deliberately out of scope |
-| MathML in/out | formulary/pulldown-latex consumers | not implemented |
-| `\varlim*`, decorated operator bodies | amsmath limit operators | needs a `Function` body model |
+| Gap | Blocks | State | Decision |
+| --- | --- | --- | --- |
+| Environments (`equation`, `gather`, `smallmatrix`, matrix stars) | real documents | supported; `array`/`alignat` in queue 4.8c | implement; remaining environments land with their parser, writer and layout together |
+| `\multicolumn` | spanning cells | needs a cell-span field | implement only when a host document needs it; a table with spans cannot silently degrade to equal cells |
+| `CD` | commutative diagrams | not modelled | do not implement; rare, and its grid is not a table |
+| Colours, `\color`/`\textcolor` | coloured documents | not modelled | implement in 4.7; colour belongs on display items, so it must be designed with the style wrapper rather than patched per node |
+| Style/class wrappers (`\displaystyle`, `\mathop`) | custom operators and style control | not modelled | implement in 4.6; `\mathop{…}\limits` is the only way to declare a custom operator |
+| Top-level `\\`, `\newline`, `\par` | multi-line formulas | not modelled | defer until a host document requires it; KaTeX itself accepts them only in specific contexts `[unverified]` |
+| Long-tail symbols (~420) | amsmath relations/arrows | table entries, pending | implement in batches driven by real documents, not by the probe list alone |
+| `\varlim*`, decorated operator bodies | amsmath limit operators | needs a `Function` body model | implement after 4.6: a decorated operator must still count as an operator for limit placement |
+| Full macro semantics (`\let`, `\edef`, `\expandafter`) | TeX packages | deliberately out of scope | do not implement; a token-list expander is the boundary |
+| MathML in/out | formulary/pulldown-latex consumers | not implemented | do not implement; these are a different front/back end, not part of the LaTeX rendering path |
+| Event API / MathML writer | pulldown-latex consumers | not exposed | do not implement without a named consumer; an adapter can be added without changing the model |
 
 ## Conclusion
 
@@ -134,3 +136,7 @@ formulas without a TeX installation. It cannot yet replace:
 Those four exclusions are capability boundaries, not missing polish; closing
 them would require a MathML front end, an event API, a TeX engine, or the full
 KaTeX command set respectively.
+
+The decisions above order the remaining work by whether it blocks the LaTeX
+rendering path: environments, colours and style wrappers do, so they come
+first; MathML, an event API and TeX macros are separate surfaces and stay out.
