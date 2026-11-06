@@ -11,8 +11,8 @@ use math_core::{
     layout_with_shaper_and_geometry,
 };
 use math_syntax::{
-    Document, Spellings, is_sized_delimiter, parse, to_latex_with_spans_and_spellings,
-    to_latex_with_spellings,
+    CommandShape, Document, Spellings, command_shape, command_template, parse,
+    to_latex_with_spans_and_spellings, to_latex_with_spellings,
 };
 use std::sync::Arc;
 
@@ -669,37 +669,47 @@ impl Editor {
                 true
             }
             Key::Escape => self.cancel_command(font),
-            // LaTeX allows whitespace between `\left`/`\right` and the
+            // LaTeX allows whitespace between a delimiter command and its
             // fence, so a space must not resolve the buffer and lose the fence.
             Key::Character(symbol)
                 if symbol.is_whitespace()
-                    && matches!(self.command.as_deref(), Some("left" | "right")) =>
+                    && self
+                        .command
+                        .as_deref()
+                        .is_some_and(|name| command_shape(name) == CommandShape::Delimiter) =>
             {
                 true
             }
-            Key::Character(symbol) if self.command.as_deref() == Some("left") => {
-                match left_delimiter_snippet(symbol) {
-                    Some(snippet) => self.resolve_command_with(Some(snippet), font),
-                    None => self.resolve_command(font),
-                }
-            }
-            Key::Character(symbol) if self.command.as_deref() == Some("right") => {
-                self.close_delimiter(symbol, font)
-            }
-            Key::Character(symbol) if self.command.as_deref() == Some("middle") => {
-                self.insert_middle(symbol, font)
-            }
-            Key::Character(symbol) if self.command.as_deref() == Some("not") => {
-                self.resolve_command_with(Some(format!("\\not{symbol}")), font)
-            }
-            Key::Character(symbol) if self.command.as_deref().is_some_and(is_sized_delimiter) => {
+            Key::Character(symbol)
+                if self
+                    .command
+                    .as_deref()
+                    .is_some_and(|name| command_shape(name) == CommandShape::Delimiter) =>
+            {
                 let name = self.command.clone().unwrap_or_default();
-                match delimiter_tex(symbol) {
-                    Some(fence) => {
-                        self.resolve_command_with(Some(format!("\\{name}{fence}")), font)
-                    }
-                    None => self.resolve_command(font),
+                match name.as_str() {
+                    "left" => match left_delimiter_snippet(symbol) {
+                        Some(snippet) => self.resolve_command_with(Some(snippet), font),
+                        None => self.resolve_command(font),
+                    },
+                    "right" => self.close_delimiter(symbol, font),
+                    "middle" => self.insert_middle(symbol, font),
+                    _ => match delimiter_tex(symbol) {
+                        Some(fence) => {
+                            self.resolve_command_with(Some(format!("\\{name}{fence}")), font)
+                        }
+                        None => self.resolve_command(font),
+                    },
                 }
+            }
+            Key::Character(symbol)
+                if self
+                    .command
+                    .as_deref()
+                    .is_some_and(|name| command_shape(name) == CommandShape::SymbolArgument) =>
+            {
+                let name = self.command.clone().unwrap_or_default();
+                self.resolve_command_with(Some(format!("\\{name}{symbol}")), font)
             }
             _ => {
                 let resolved = self.resolve_command(font);
@@ -1858,48 +1868,4 @@ fn first_empty_slot(model: &Model, id: NodeId) -> Option<(NodeId, Slot, usize)> 
         }
     }
     None
-}
-
-/// Commands that build a structure with empty slots, so the caret can enter
-/// the first one. Everything else is parsed as a zero-argument command.
-fn command_template(name: &str) -> Option<String> {
-    let two_parts = matches!(name, "frac" | "dfrac" | "tfrac" | "cfrac");
-    let over_under = matches!(name, "overset" | "underset" | "stackrel");
-    let one_part = matches!(
-        name,
-        "sqrt"
-            | "overline"
-            | "underline"
-            | "hat"
-            | "widehat"
-            | "tilde"
-            | "widetilde"
-            | "bar"
-            | "vec"
-            | "dot"
-            | "ddot"
-            | "acute"
-            | "grave"
-            | "breve"
-            | "check"
-            | "mathring"
-            | "boxed"
-            | "cancel"
-            | "bcancel"
-            | "xcancel"
-            | "overbrace"
-            | "underbrace"
-            | "xrightarrow"
-            | "xleftarrow"
-            | "phantom"
-            | "hphantom"
-            | "vphantom"
-    );
-    if two_parts || over_under {
-        Some(format!("\\{name}{{}}{{}}"))
-    } else if one_part {
-        Some(format!("\\{name}{{}}"))
-    } else {
-        None
-    }
 }

@@ -4,6 +4,7 @@
 //! place: an unknown command becomes an `Error` node so the rest of the
 //! formula still parses and stays editable.
 
+mod commands;
 mod lexer;
 mod macros;
 mod parser;
@@ -13,6 +14,7 @@ mod writer;
 
 use math_core::Diagnostic;
 
+pub use commands::{CommandShape, command_shape, command_template};
 pub use math_core::{Model, Node, NodeId, NodeKind, Span};
 pub use spellings::{Spelling, Spellings};
 pub use writer::{
@@ -96,11 +98,6 @@ fn contains_error(model: &Model, id: NodeId) -> bool {
                 || under.is_some_and(|under| contains_error(model, under))
         }
     }
-}
-
-/// Whether a command's next token is a delimiter (the `\big` family).
-pub fn is_sized_delimiter(name: &str) -> bool {
-    symbols::sized_delimiter(name).is_some()
 }
 
 pub fn parse(source: &str) -> Document {

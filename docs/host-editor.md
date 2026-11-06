@@ -64,7 +64,14 @@ every id and marks the result `Origin::Synthetic`. `Model::insert_existing`
 splices the copied nodes into the target row. The caret goes to the first empty
 slot the snippet created, so `\frac` followed by `x` types the numerator.
 
-`insert_latex` is the same path for a host toolbar, without the command buffer.
+`math_syntax::command_shape` names what each command expects after its name:
+no argument, a delimiter, a math argument, a font-variant argument, two math
+arguments, an optional bracket plus a math argument, a name/text argument, an
+environment name, a length, a relation symbol, or a special form the generic
+template cannot express. The editor uses that table instead of keeping its own
+command list; `command_template` derives the empty-argument snippet only for
+shapes whose empty form is meaningful. Font and name arguments deliberately
+have no template until the model can hold them.
 
 Commands whose next token is a delimiter consume the key that ends the
 buffer instead of parsing a bare command:

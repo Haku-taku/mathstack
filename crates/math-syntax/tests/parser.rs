@@ -1,7 +1,9 @@
 use math_core::{
     AtomClass, FractionRule, Model, NodeId, NodeKind, Origin, SpaceKind, Span, Variant,
 };
-use math_syntax::{parse, to_latex, to_latex_with_spans};
+use math_syntax::{
+    CommandShape, command_shape, command_template, parse, to_latex, to_latex_with_spans,
+};
 
 fn row(model: &Model, id: NodeId) -> &[NodeId] {
     match model.kind(id) {
@@ -817,4 +819,31 @@ fn a_document_keeps_the_symbol_spelling_it_was_written_with() {
     assert_eq!(document.to_latex(), "±+\\pm +\\le ");
     // The canonical writer still exports what the model means, not the token.
     assert_eq!(to_latex(&document.model, document.root()), "±+±+≤");
+}
+
+#[test]
+fn command_shapes_describe_what_the_parser_expects() {
+    assert_eq!(command_shape("alpha"), CommandShape::None);
+    assert_eq!(command_shape("sum"), CommandShape::None);
+    assert_eq!(command_shape("bmod"), CommandShape::None);
+    assert_eq!(command_shape("frac"), CommandShape::TwoMathArguments);
+    assert_eq!(command_template("frac").as_deref(), Some("\\frac{}{}"));
+    assert_eq!(command_shape("hat"), CommandShape::MathArgument);
+    assert_eq!(command_template("hat").as_deref(), Some("\\hat{}"));
+    assert_eq!(command_shape("mathbb"), CommandShape::VariantArgument);
+    assert_eq!(command_template("mathbb"), None);
+    assert_eq!(command_shape("left"), CommandShape::Delimiter);
+    assert_eq!(command_shape("bigl"), CommandShape::Delimiter);
+    assert_eq!(command_shape("sqrt"), CommandShape::OptionalMathArgument);
+    assert_eq!(command_shape("smash"), CommandShape::OptionalFlagArgument);
+    assert_eq!(
+        command_shape("xrightarrow"),
+        CommandShape::OptionalUnderArgument
+    );
+    assert_eq!(command_shape("operatorname"), CommandShape::NameArgument);
+    assert_eq!(command_shape("begin"), CommandShape::Environment);
+    assert_eq!(command_shape("hspace"), CommandShape::Length);
+    assert_eq!(command_shape("not"), CommandShape::SymbolArgument);
+    assert_eq!(command_shape("genfrac"), CommandShape::Special);
+    assert_eq!(command_shape("nope"), CommandShape::Unknown);
 }
