@@ -1,5 +1,6 @@
 use math_core::{
-    AtomClass, FractionRule, Limits, Model, NodeId, NodeKind, Origin, SpaceKind, Span, Variant,
+    AtomClass, FractionRule, Limits, Model, NodeId, NodeKind, Origin, SpaceKind, Span, Style,
+    Variant,
 };
 use math_syntax::{
     CommandShape, command_shape, command_template, parse, to_latex, to_latex_with_spans,
@@ -161,8 +162,9 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
             rows,
             columns,
             alignment,
+            cell_style,
         } => {
-            out.push_str(&format!("Table({columns},{alignment:?},"));
+            out.push_str(&format!("Table({columns},{alignment:?},{cell_style:?},"));
             for row in rows {
                 write_dump(model, *row, out);
                 out.push(',');
@@ -476,6 +478,7 @@ fn writer_round_trips_the_grammar() {
         "\\begin{Bmatrix*}[l]a&b\\end{Bmatrix*}",
         "\\begin{vmatrix*}[r]a&b\\end{vmatrix*}",
         "\\begin{Vmatrix*}[c]a&b\\end{Vmatrix*}",
+        "\\begin{smallmatrix}a&b\\\\c&d\\end{smallmatrix}",
         "\\stackrel{!}{=}",
         "\\substack{0<i<n\\\\i\\ne 1}",
         "\\cfrac{1}{1+\\cfrac{1}{x}}",
@@ -784,12 +787,20 @@ fn matrix_environments_build_rows_and_cells() {
         rows,
         columns,
         alignment,
+        cell_style,
     } = model.kind(content[0])
     else {
         panic!("expected a table");
     };
     assert_eq!(*columns, 2);
     assert!(alignment.is_empty(), "matrix columns default to centred");
+    // Layout uses this even in display style, where TeX still sets matrix
+    // cells in text style.
+    assert_eq!(
+        *cell_style,
+        Some(Style::TEXT),
+        "matrix cells are text style"
+    );
     assert_eq!(rows.len(), 2);
     let NodeKind::TableRow { cells } = model.kind(rows[0]) else {
         panic!("expected a table row");
@@ -870,6 +881,7 @@ fn environment_variants_keep_their_table_and_name() {
         columns,
         alignment,
         rows,
+        cell_style,
     } = document
         .model
         .kind(row(&document.model, document.root())[0])
@@ -878,6 +890,11 @@ fn environment_variants_keep_their_table_and_name() {
     };
     assert_eq!(*columns, 1);
     assert!(alignment.is_empty(), "gather columns default to centred");
+    assert_eq!(
+        *cell_style,
+        Some(Style::DISPLAY),
+        "gather cells are display style"
+    );
     assert_eq!(rows.len(), 2);
     assert!(document.to_latex().starts_with("\\begin {gather}"));
 
@@ -894,16 +911,37 @@ fn environment_variants_keep_their_table_and_name() {
     );
     assert!(document.to_latex().starts_with("\\begin {split}"));
 
-    // The cases family differs only in which fence it carries; `dcases`
-    // keeps its name even though its table is shaped like `cases`.
-    for (source, left, right, name) in [
-        ("\\begin{dcases}a&b\\end{dcases}", Some('{'), None, "dcases"),
-        ("\\begin{rcases}a&b\\end{rcases}", None, Some('}'), "rcases"),
+    // The cases family differs in which fence it carries and in its cell
+    // style; `dcases` keeps its name even though its table is shaped like
+    // `cases`.
+    for (source, left, right, name, style) in [
+        (
+            "\\begin{cases}a&b\\end{cases}",
+            Some('{'),
+            None,
+            "cases",
+            Style::TEXT,
+        ),
+        (
+            "\\begin{dcases}a&b\\end{dcases}",
+            Some('{'),
+            None,
+            "dcases",
+            Style::DISPLAY,
+        ),
+        (
+            "\\begin{rcases}a&b\\end{rcases}",
+            None,
+            Some('}'),
+            "rcases",
+            Style::TEXT,
+        ),
         (
             "\\begin{drcases}a&b\\end{drcases}",
             Some('{'),
             Some('}'),
             "drcases",
+            Style::DISPLAY,
         ),
     ] {
         let document = parse(source);
@@ -921,10 +959,16 @@ fn environment_variants_keep_their_table_and_name() {
         let NodeKind::Row(content) = document.model.kind(*body) else {
             panic!("expected a row inside the {name} fence");
         };
-        let NodeKind::Table { alignment, .. } = document.model.kind(content[0]) else {
+        let NodeKind::Table {
+            alignment,
+            cell_style,
+            ..
+        } = document.model.kind(content[0])
+        else {
             panic!("expected the {name} table");
         };
         assert_eq!(alignment, &vec![math_core::Alignment::Left; 2]);
+        assert_eq!(*cell_style, Some(style), "{name} cell style");
         assert!(
             document
                 .to_latex()
@@ -946,6 +990,22 @@ fn environment_variants_keep_their_table_and_name() {
     assert_eq!(*columns, 2);
     assert_eq!(alignment, &vec![math_core::Alignment::Right; 2]);
     assert!(document.to_latex().starts_with("\\begin {matrix*}[r]"));
+
+    // `smallmatrix` is a matrix whose cells layout in script style.
+    let document = parse("\\begin{smallmatrix}a&b\\\\c&d\\end{smallmatrix}");
+    let NodeKind::Table {
+        columns,
+        cell_style,
+        ..
+    } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected a smallmatrix table");
+    };
+    assert_eq!(*columns, 2);
+    assert_eq!(*cell_style, Some(Style::SCRIPT));
+    assert!(document.to_latex().starts_with("\\begin {smallmatrix}"));
 }
 
 #[test]

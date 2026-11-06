@@ -23,9 +23,10 @@ writer normalizes both to `\overset`.
 `\substack` parses its braces as a grid: rows end at `\\`, cells at `&`, and
 the closing brace ends the grid. The environment parser and `\substack` share
 `build_table`, which pads every row to the widest and wraps the rows in a
-`Table`. The writer prints it as `\begin{matrix}`, which parses back to the same
-structure. Making a cell also close at `}` is what lets one row-parsing routine
-serve a brace-delimited grid and an environment.
+`Table`. Its cells are script style, so the writer prints it as
+`\begin{smallmatrix}`, which parses back to the same structure. Making a cell
+also close at `}` is what lets one row-parsing routine serve a brace-delimited
+grid and an environment.
 
 `\pmod` follows amsmath's expansion rather than guessing: a quad, then
 `\text{(mod}`, a thin space, the argument, and `\text{)}`. The spaces are
@@ -61,11 +62,13 @@ the writer prints `\begin{matrix*}[l]` (or the fenced variant) when every column
 shares an alignment. A table with no alignment stays `matrix`, and alternating
 columns stay `aligned`.
 
-`smallmatrix` and the display cell style of `dcases`/`drcases` are not
-represented: `Table` has no cell-style field, so the parser cannot ask layout
-for script or display cells. `smallmatrix` is therefore not accepted yet;
-`dcases`/`drcases` parse and keep their names but render their cells in the
-surrounding style, like `cases`.
+`Table` carries an optional cell style, and layout sets each cell in
+`cell_style.unwrap_or(style)`, so an environment can fix its cells independently
+of where it appears. Matrix and cases cells use text style, `aligned`/`gather`/
+`split` and the `d` cases use display style, and `smallmatrix` uses script
+style. The writer infers `smallmatrix` from script cells and picks
+`cases`/`dcases`/`rcases`/`drcases` from the fence and the cell style, while a
+recorded environment name still wins over the inferred one.
 
 ## Lengths and `\hspace`
 

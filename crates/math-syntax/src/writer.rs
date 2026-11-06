@@ -8,7 +8,7 @@ use crate::spellings::Spellings;
 use crate::symbols;
 use math_core::{
     Alignment, Atom, FractionRule, Length, LengthUnit, Limits, Model, NodeId, NodeKind, Origin,
-    Size, Span,
+    Size, Span, Style,
 };
 
 /// Where a node sits: a nested row in an item position needs braces to stay a
@@ -193,8 +193,8 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                 // its body and table would otherwise lose their spans.
                 out.spans.push((*body, Span::new(body_start, body_end)));
                 out.spans.push((table, Span::new(body_start, body_end)));
-            } else if let Some(table) = cases_table(model, *body, *left, *right) {
-                write_environment(model, table, "cases", out);
+            } else if let Some((name, table)) = cases_environment(model, *body, *left, *right) {
+                write_environment(model, table, name, out);
             } else if let Some((command, numerator, denominator)) =
                 binomial(model, *body, *left, *right)
             {
@@ -404,12 +404,15 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             }
         }
         NodeKind::Table {
-            columns, alignment, ..
+            columns,
+            alignment,
+            cell_style,
+            ..
         } => {
             let environment = out.environment(id).map(str::to_owned);
             let (name, argument) = match environment.as_deref() {
                 Some(name) => (name, environment_argument(name, model, id)),
-                None => inferred_environment(*columns, alignment),
+                None => inferred_environment(*columns, alignment, *cell_style),
             };
             write_environment_with_arg(model, id, name, argument, out);
         }
@@ -623,45 +626,66 @@ fn uniform_alignment(columns: usize, alignment: &[Alignment]) -> Option<char> {
 }
 
 /// The environment a table's shape implies when no source name survives.
-fn inferred_environment(columns: usize, alignment: &[Alignment]) -> (&'static str, Option<char>) {
-    if aligned_columns(columns, alignment) {
-        ("aligned", None)
-    } else if let Some(argument) = uniform_alignment(columns, alignment) {
-        ("matrix*", Some(argument))
-    } else {
-        ("matrix", None)
+fn inferred_environment(
+    columns: usize,
+    alignment: &[Alignment],
+    cell_style: Option<Style>,
+) -> (&'static str, Option<char>) {
+    match cell_style.map(|style| style.size) {
+        Some(Size::Script | Size::ScriptScript) => ("smallmatrix", None),
+        Some(Size::Display) => {
+            if aligned_columns(columns, alignment) {
+                ("aligned", None)
+            } else {
+                ("gathered", None)
+            }
+        }
+        _ => {
+            if aligned_columns(columns, alignment) {
+                ("aligned", None)
+            } else if let Some(argument) = uniform_alignment(columns, alignment) {
+                ("matrix*", Some(argument))
+            } else {
+                ("matrix", None)
+            }
+        }
     }
 }
 
-/// A left brace with no right fence and left-aligned columns is `cases`; the
-/// environment name is the only place the alignment survives, so the writer
-/// must emit it to round-trip the model.
-fn cases_table(
+/// A fenced all-left table spells one of the cases environments; its cell
+/// style selects `cases`/`rcases` (text) or `dcases`/`drcases` (display).
+fn cases_environment(
     model: &Model,
     body: NodeId,
     left: Option<char>,
     right: Option<char>,
-) -> Option<NodeId> {
-    if left != Some('{') || right.is_some() {
-        return None;
-    }
+) -> Option<(&'static str, NodeId)> {
     let NodeKind::Row(content) = model.kind(body) else {
         return None;
     };
     let [table] = content.as_slice() else {
         return None;
     };
-    match model.kind(*table) {
-        NodeKind::Table { alignment, .. }
-            if !alignment.is_empty()
-                && alignment
-                    .iter()
-                    .all(|column| *column == math_core::Alignment::Left) =>
-        {
-            Some(*table)
-        }
-        _ => None,
+    let NodeKind::Table {
+        alignment,
+        cell_style,
+        ..
+    } = model.kind(*table)
+    else {
+        return None;
+    };
+    if alignment.is_empty() || !alignment.iter().all(|column| *column == Alignment::Left) {
+        return None;
     }
+    let size = cell_style.map_or(Size::Text, |style| style.size);
+    let name = match (left, right, size) {
+        (Some('{'), None, Size::Text) => "cases",
+        (Some('{'), None, Size::Display) => "dcases",
+        (None, Some('}'), Size::Text) => "rcases",
+        (Some('{'), Some('}'), Size::Display) => "drcases",
+        _ => return None,
+    };
+    Some((name, *table))
 }
 
 /// The parser unwraps a one-child braced argument; a second pair of braces

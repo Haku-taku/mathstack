@@ -311,6 +311,7 @@ env:matrix*
 env:pmatrix
 env:pmatrix*
 env:rcases
+env:smallmatrix
 env:split
 env:vmatrix
 env:vmatrix*

@@ -7,7 +7,7 @@ use crate::spellings::{Spelling, Spellings};
 use crate::symbols;
 use math_core::{
     Alignment, Atom, Diagnostic, FractionRule, Length, LengthUnit, Limits, Model, ModelBuilder,
-    NodeId, NodeKind, Origin, PhantomKind, Size, SpaceKind, Span, Variant,
+    NodeId, NodeKind, Origin, PhantomKind, Size, SpaceKind, Span, Style, Variant,
 };
 
 /// LaTeX nesting a formula can plausibly use; deeper input is skipped rather
@@ -1080,7 +1080,14 @@ impl Parser<'_> {
             }
         };
         let table_span = Span::new(span.start, end_span.end.max(span.end));
-        let table = self.build_table(cells, columns, alignment, table_span, end_span.start);
+        let table = self.build_table(
+            cells,
+            columns,
+            alignment,
+            environment.cell_style,
+            table_span,
+            end_span.start,
+        );
         let node = match environment.delimiters {
             None => table,
             Some((left, right)) => {
@@ -1168,6 +1175,7 @@ impl Parser<'_> {
         cells: Vec<Vec<NodeId>>,
         columns: usize,
         alignment: Vec<Alignment>,
+        cell_style: Style,
         table_span: Span,
         tail: usize,
     ) -> NodeId {
@@ -1186,6 +1194,7 @@ impl Parser<'_> {
                 rows,
                 columns,
                 alignment,
+                cell_style: Some(cell_style),
             },
             table_span,
         )
@@ -1258,7 +1267,7 @@ impl Parser<'_> {
 
         let columns = columns.max(1);
         let table_span = Span::new(span.start, end.max(span.end));
-        self.build_table(cells, columns, Vec::new(), table_span, end)
+        self.build_table(cells, columns, Vec::new(), Style::SCRIPT, table_span, end)
     }
 
     fn at_environment_end(&self) -> bool {
@@ -1519,6 +1528,9 @@ struct Environment {
     optional_alignment: bool,
     /// `equation` holds one formula instead of a grid.
     formula: bool,
+    /// The style the environment sets its cells in, as KaTeX's `dCellStyle`
+    /// and the array/matrix definitions do.
+    cell_style: Style,
 }
 
 #[derive(Clone, Copy)]
@@ -1535,85 +1547,72 @@ enum EnvironmentAlignment {
 
 impl Environment {
     fn lookup(name: &str) -> Option<Self> {
-        let environment = |delimiters, alignment, optional_alignment| Environment {
+        let grid = |delimiters, alignment, optional_alignment, cell_style| Environment {
             delimiters,
             alignment,
             optional_alignment,
             formula: false,
+            cell_style,
+        };
+        // amsmath sets matrix and cases cells in text style.
+        let matrix = |delimiters, optional_alignment| {
+            grid(
+                delimiters,
+                EnvironmentAlignment::Columns,
+                optional_alignment,
+                Style::TEXT,
+            )
         };
         Some(match name {
-            "matrix" => environment(None, EnvironmentAlignment::Columns, false),
-            "matrix*" => environment(None, EnvironmentAlignment::Columns, true),
-            "pmatrix" => environment(
-                Some((Some('('), Some(')'))),
-                EnvironmentAlignment::Columns,
+            "matrix" => matrix(None, false),
+            "matrix*" => matrix(None, true),
+            "pmatrix" => matrix(Some((Some('('), Some(')'))), false),
+            "pmatrix*" => matrix(Some((Some('('), Some(')'))), true),
+            "bmatrix" => matrix(Some((Some('['), Some(']'))), false),
+            "bmatrix*" => matrix(Some((Some('['), Some(']'))), true),
+            "Bmatrix" => matrix(Some((Some('{'), Some('}'))), false),
+            "Bmatrix*" => matrix(Some((Some('{'), Some('}'))), true),
+            "vmatrix" => matrix(Some((Some('|'), Some('|'))), false),
+            "vmatrix*" => matrix(Some((Some('|'), Some('|'))), true),
+            "Vmatrix" => matrix(Some((Some('‖'), Some('‖'))), false),
+            "Vmatrix*" => matrix(Some((Some('‖'), Some('‖'))), true),
+            "smallmatrix" => grid(None, EnvironmentAlignment::Columns, false, Style::SCRIPT),
+            "cases" => grid(
+                Some((Some('{'), None)),
+                EnvironmentAlignment::Cases,
                 false,
+                Style::TEXT,
             ),
-            "pmatrix*" => environment(
-                Some((Some('('), Some(')'))),
-                EnvironmentAlignment::Columns,
-                true,
-            ),
-            "bmatrix" => environment(
-                Some((Some('['), Some(']'))),
-                EnvironmentAlignment::Columns,
+            "dcases" => grid(
+                Some((Some('{'), None)),
+                EnvironmentAlignment::Cases,
                 false,
+                Style::DISPLAY,
             ),
-            "bmatrix*" => environment(
-                Some((Some('['), Some(']'))),
-                EnvironmentAlignment::Columns,
-                true,
-            ),
-            "Bmatrix" => environment(
-                Some((Some('{'), Some('}'))),
-                EnvironmentAlignment::Columns,
+            "rcases" => grid(
+                Some((None, Some('}'))),
+                EnvironmentAlignment::Cases,
                 false,
+                Style::TEXT,
             ),
-            "Bmatrix*" => environment(
-                Some((Some('{'), Some('}'))),
-                EnvironmentAlignment::Columns,
-                true,
-            ),
-            "vmatrix" => environment(
-                Some((Some('|'), Some('|'))),
-                EnvironmentAlignment::Columns,
-                false,
-            ),
-            "vmatrix*" => environment(
-                Some((Some('|'), Some('|'))),
-                EnvironmentAlignment::Columns,
-                true,
-            ),
-            "Vmatrix" => environment(
-                Some((Some('‖'), Some('‖'))),
-                EnvironmentAlignment::Columns,
-                false,
-            ),
-            "Vmatrix*" => environment(
-                Some((Some('‖'), Some('‖'))),
-                EnvironmentAlignment::Columns,
-                true,
-            ),
-            "cases" | "dcases" => {
-                environment(Some((Some('{'), None)), EnvironmentAlignment::Cases, false)
-            }
-            "rcases" => environment(Some((None, Some('}'))), EnvironmentAlignment::Cases, false),
-            "drcases" => environment(
+            "drcases" => grid(
                 Some((Some('{'), Some('}'))),
                 EnvironmentAlignment::Cases,
                 false,
+                Style::DISPLAY,
             ),
             "aligned" | "align" | "align*" | "split" => {
-                environment(None, EnvironmentAlignment::Aligned, false)
+                grid(None, EnvironmentAlignment::Aligned, false, Style::DISPLAY)
             }
             "gather" | "gather*" | "gathered" => {
-                environment(None, EnvironmentAlignment::Center, false)
+                grid(None, EnvironmentAlignment::Center, false, Style::DISPLAY)
             }
             "equation" | "equation*" => Environment {
                 delimiters: None,
                 alignment: EnvironmentAlignment::Center,
                 optional_alignment: false,
                 formula: true,
+                cell_style: Style::TEXT,
             },
             _ => return None,
         })

@@ -317,7 +317,19 @@ fn layout_kind(
             rows,
             columns,
             alignment,
-        } => layout_table(cx, rows, *columns, alignment, size, style, diagnostics),
+            cell_style,
+        } => layout_table(
+            cx,
+            TableSpec {
+                rows,
+                columns: *columns,
+                alignment,
+                cell_style: *cell_style,
+            },
+            size,
+            style,
+            diagnostics,
+        ),
         NodeKind::TableRow { cells } => layout_table_row(cx, cells, size, style, diagnostics),
     }
 }
@@ -1464,19 +1476,32 @@ fn layout_radical(
     out
 }
 
+/// The table fields layout needs, grouped to keep the signature readable.
+struct TableSpec<'a> {
+    rows: &'a [NodeId],
+    columns: usize,
+    alignment: &'a [Alignment],
+    cell_style: Option<Style>,
+}
+
 /// A matrix-style table: cells share column widths and row baselines.
 fn layout_table(
     cx: &Cx<'_>,
-    rows: &[NodeId],
-    columns: usize,
-    alignment: &[Alignment],
+    table: TableSpec<'_>,
     size: f32,
     style: Style,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> MathBox {
+    let TableSpec {
+        rows,
+        columns,
+        alignment,
+        cell_style,
+    } = table;
     let em = style.em(cx.font, size);
     let column_gap = 0.5 * em;
     let row_gap = 0.5 * em;
+    let cell_style = cell_style.unwrap_or(style);
 
     // Lay every cell out first; column widths need the whole table.
     let mut grid: Vec<(NodeId, Vec<MathBox>)> = Vec::new();
@@ -1490,7 +1515,7 @@ fn layout_table(
         };
         let mut laid = Vec::with_capacity(columns);
         for cell in cells {
-            laid.push(layout_node(cx, *cell, size, style, diagnostics));
+            laid.push(layout_node(cx, *cell, size, cell_style, diagnostics));
         }
         while laid.len() < columns {
             laid.push(MathBox::empty());

@@ -27,7 +27,7 @@ list of KaTeX commands.
 | Property | State | Evidence |
 | --- | --- | --- |
 | LaTeX input | recursive-descent parser, spans on every node | `math-syntax`; `every_corpus_byte_is_covered_by_a_span_or_diagnostic` |
-| Syntax breadth | 313/987 KaTeX probe entries; 77/77 curated constructs | `docs/completeness.md`; `conformance.rs` |
+| Syntax breadth | 314/987 KaTeX probe entries; 77/77 curated constructs | `docs/completeness.md`; `conformance.rs` |
 | Semantic tree | stable `NodeId` arena, `Origin`, `Span` | `math-core::Model`; M4 tests |
 | Layout | TeX Appendix G rules driven by MATH constants | `math-diff --gate`, 16-formula differential |
 | Fonts | any OpenType MATH face, caller-supplied bytes; `ssty` variants | `math-font`; `script_levels_take_the_fonts_alternates` |
@@ -93,7 +93,7 @@ ratex is a KaTeX port with hardcoded Computer Modern metrics and a flat display
 list (`raw/rust.md`, ratex section).
 
 - **KaTeX command parity:** **not replaceable yet**. The probe baseline is
-  313/987 entries, and probe coverage is not the same as KaTeX's semantics.
+  314/987 entries, and probe coverage is not the same as KaTeX's semantics.
 - **Arbitrary math fonts:** this stack is stronger: layout is MATH-driven and
   accepts caller font bytes, while ratex cannot accept another face.
 - **Editing:** ratex has none.
@@ -109,7 +109,7 @@ stretch and spacing, not a replacement target.
 
 | Gap | Blocks | State |
 | --- | --- | --- |
-| Environments (`equation`, `gather`, `smallmatrix`, matrix stars) | real documents | in progress (queue 4.8) |
+| Environments (`equation`, `gather`, `smallmatrix`, matrix stars) | real documents | supported; `array`/`alignat`/`\multicolumn` still queue 4.8 |
 | Colours, `\color`/`\textcolor` | coloured documents | not modelled; needs display-item colour fields |
 | Style/class wrappers (`\displaystyle`, `\mathop`) | custom operators and style control | not modelled |
 | Top-level `\\` | multi-line formulas | not modelled |

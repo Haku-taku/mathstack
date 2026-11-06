@@ -7,7 +7,7 @@
 use crate::atom::Atom;
 use crate::class::AtomClass;
 use crate::span::Span;
-use crate::style::Size;
+use crate::style::{Size, Style};
 
 /// A spacing command's width, in em.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -319,6 +319,8 @@ pub enum NodeKind {
         columns: usize,
         /// One entry per column; shorter lists centre the remaining columns.
         alignment: Vec<Alignment>,
+        /// The style the cells are set in; `None` inherits the table's.
+        cell_style: Option<Style>,
     },
     /// One table row; its children are cells (each a row of its own).
     TableRow {
@@ -604,10 +606,12 @@ impl NodeKind {
                 rows,
                 columns,
                 alignment,
+                cell_style,
             } => NodeKind::Table {
                 rows: rows.iter().map(|id| map(*id)).collect(),
                 columns: *columns,
                 alignment: alignment.clone(),
+                cell_style: *cell_style,
             },
             NodeKind::TableRow { cells } => NodeKind::TableRow {
                 cells: cells.iter().map(|id| map(*id)).collect(),
@@ -1378,6 +1382,7 @@ impl ModelBuilder {
                 rows,
                 columns,
                 alignment,
+                cell_style: None,
             },
             Span::default(),
         )
