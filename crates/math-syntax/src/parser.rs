@@ -1267,7 +1267,9 @@ impl Parser<'_> {
 
         let columns = columns.max(1);
         let table_span = Span::new(span.start, end.max(span.end));
-        self.build_table(cells, columns, Vec::new(), Style::SCRIPT, table_span, end)
+        let table = self.build_table(cells, columns, Vec::new(), Style::SCRIPT, table_span, end);
+        self.spellings.set_environment(table, "substack".to_owned());
+        table
     }
 
     fn at_environment_end(&self) -> bool {

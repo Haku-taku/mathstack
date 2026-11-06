@@ -7,7 +7,7 @@ and writer alone:
 | Construct | Node |
 | --- | --- |
 | `\stackrel{a}{=}` | `OverUnder { base, over: a, under: None }` |
-| `\substack{…}` | a `Table`, which its script position already sets small |
+| `\substack{…}` | a `Table` named `substack`, which its script position already sets small |
 | `\cfrac{…}{…}` | `Fraction` with style `Display`, like `\dfrac` |
 | `\pmod{n}` | a row: quad, `\text{(mod}`, thin space, `n`, `\text{)}` |
 | `\bmod` | a row: medium space, `\text{mod}`, medium space |
@@ -23,10 +23,11 @@ writer normalizes both to `\overset`.
 `\substack` parses its braces as a grid: rows end at `\\`, cells at `&`, and
 the closing brace ends the grid. The environment parser and `\substack` share
 `build_table`, which pads every row to the widest and wraps the rows in a
-`Table`. Its cells are script style, so the writer prints it as
-`\begin{smallmatrix}`, which parses back to the same structure. Making a cell
-also close at `}` is what lets one row-parsing routine serve a brace-delimited
-grid and an environment.
+`Table`. Its cells are script style and `Document::to_latex` records the name
+`substack`, so the writer prints the command again instead of the structurally
+equivalent `\begin{smallmatrix}`; a bare `to_latex` without spellings still
+infers `smallmatrix`. Making a cell also close at `}` is what lets one
+row-parsing routine serve a brace-delimited grid and an environment.
 
 `\pmod` follows amsmath's expansion rather than guessing: a quad, then
 `\text{(mod}`, a thin space, the argument, and `\text{)}`. The spaces are

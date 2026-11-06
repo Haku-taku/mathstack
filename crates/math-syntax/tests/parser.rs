@@ -1009,6 +1009,14 @@ fn environment_variants_keep_their_table_and_name() {
 }
 
 #[test]
+fn substack_writes_back_as_the_command() {
+    let document = parse("\\substack{0<i<n\\\\i\\ne 1}");
+    let latex = document.to_latex();
+    assert_eq!(latex, "\\substack {0<i<n \\\\ i\\ne 1}");
+    assert_eq!(parse(&latex).to_latex(), latex);
+}
+
+#[test]
 fn spacing_and_operators_reach_the_model() {
     let document = parse("a\\,b");
     let model = &document.model;

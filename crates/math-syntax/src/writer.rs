@@ -410,11 +410,15 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             ..
         } => {
             let environment = out.environment(id).map(str::to_owned);
-            let (name, argument) = match environment.as_deref() {
-                Some(name) => (name, environment_argument(name, model, id)),
-                None => inferred_environment(*columns, alignment, *cell_style),
-            };
-            write_environment_with_arg(model, id, name, argument, out);
+            if environment.as_deref() == Some("substack") {
+                write_substack(model, id, out);
+            } else {
+                let (name, argument) = match environment.as_deref() {
+                    Some(name) => (name, environment_argument(name, model, id)),
+                    None => inferred_environment(*columns, alignment, *cell_style),
+                };
+                write_environment_with_arg(model, id, name, argument, out);
+            }
         }
         NodeKind::TableRow { cells } => {
             for (index, cell) in cells.iter().enumerate() {
@@ -541,6 +545,22 @@ fn aligned_columns(columns: usize, alignment: &[Alignment]) -> bool {
                     Alignment::Left
                 }
         })
+}
+
+/// `\substack{…}` has table rows but is a command, not a fenced environment.
+fn write_substack(model: &Model, table: NodeId, out: &mut Output<'_>) {
+    let NodeKind::Table { rows, .. } = model.kind(table) else {
+        return;
+    };
+    push_command(out, "substack");
+    out.push('{');
+    for (index, row) in rows.iter().enumerate() {
+        if index > 0 {
+            out.push_str(" \\\\ ");
+        }
+        write(model, *row, Context::Argument, out);
+    }
+    out.push('}');
 }
 
 fn write_environment(model: &Model, table: NodeId, name: &str, out: &mut Output<'_>) {
