@@ -586,3 +586,21 @@ fn class_commands_enter_an_editable_argument() {
         }
     ));
 }
+
+#[test]
+fn decorated_operator_commands_enter_through_the_command_buffer() {
+    let mut lim = editor("");
+    press_command(&mut lim, "varinjlim");
+    press(&mut lim, Key::Character(' '));
+    assert_eq!(lim.source(), "\\varinjlim ");
+    press(&mut lim, Key::Character('_'));
+    press(&mut lim, Key::Character('i'));
+    assert_eq!(lim.source(), "\\varinjlim _{i}");
+
+    let mut arrow = editor("");
+    press_command(&mut arrow, "underrightarrow");
+    press(&mut arrow, Key::Character(' '));
+    assert_eq!(arrow.source(), "\\underrightarrow {}");
+    press(&mut arrow, Key::Character('x'));
+    assert_eq!(arrow.source(), "\\underrightarrow {x}");
+}

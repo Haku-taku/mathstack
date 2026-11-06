@@ -55,7 +55,8 @@ pub fn command_shape(name: &str) -> CommandShape {
         "mod" | "pod" => CommandShape::MathArgument,
         "left" | "right" | "middle" => CommandShape::Delimiter,
         "mathord" | "mathop" | "mathbin" | "mathrel" | "mathopen" | "mathclose" | "mathpunct"
-        | "mathinner" => CommandShape::MathArgument,
+        | "mathinner" | "underrightarrow" | "underleftarrow" => CommandShape::MathArgument,
+        "varliminf" | "varlimsup" | "varinjlim" | "varprojlim" => CommandShape::None,
         "overline" | "underline" | "phantom" | "hphantom" | "vphantom" | "cancel" | "bcancel"
         | "xcancel" | "boxed" | "overbrace" | "underbrace" => CommandShape::MathArgument,
         _ => {
