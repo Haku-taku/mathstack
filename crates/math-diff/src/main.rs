@@ -111,6 +111,24 @@ fn corpus() -> Vec<Case> {
             mathml: "<math display=\"block\"><msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup></math>",
         },
         Case {
+            name: "matrix 2x2",
+            display: false,
+            latex: "\\begin{matrix}a&b\\\\c&d\\end{matrix}",
+            mathml: "<math><mtable><mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr><mtr><mtd><mi>c</mi></mtd><mtd><mi>d</mi></mtd></mtr></mtable></math>",
+        },
+        Case {
+            name: "display style switch",
+            display: false,
+            latex: "a\\displaystyle b+c",
+            mathml: "<math><mi>a</mi><mstyle displaystyle=\"true\"><mi>b</mi><mo>+</mo><mi>c</mi></mstyle></math>",
+        },
+        Case {
+            name: "mathop under limits",
+            display: true,
+            latex: "\\mathop{f}_x",
+            mathml: "<math display=\"block\"><munder><mo>f</mo><mi>x</mi></munder></math>",
+        },
+        Case {
             name: "combined",
             display: true,
             latex: "x^2+a_i+\\frac{a+b}{2}=\\sqrt{c+d}",
@@ -267,6 +285,12 @@ fn documented_delta(name: &str) -> Option<(f32, f32, f32)> {
         "radical of fraction" => (0.0, 0.01, 0.01),
         "sum with limits" => (7.78, 0.0, 0.0),
         "integral with side scripts" => (1.81, 3.17, 1.50),
+        // MathML's table pads every cell and adds a row strut; TeX's array
+        // keeps its column and row gaps outside the cell content.
+        "matrix 2x2" => (11.0, 8.08, 2.70),
+        // MathML's munder reserves lspace/rspace around the under script and
+        // places it deeper than TeX's operator-script clearance.
+        "mathop under limits" => (4.542, 0.0, 1.58),
         _ => return None,
     })
 }

@@ -31,12 +31,15 @@ lays out the MathML. Display cases use `display="block"` and `Style::DISPLAY`.
 | bracketed square | 22.660 / 10.330 / 4.830 | 22.660 / 10.330 / 4.830 | +0.000 | +0.000 | +0.000 |
 | sum with limits | 15.560 / 15.534 / 11.706 | 23.338 / 15.534 / 11.706 | -7.778 | +0.000 | -0.000 |
 | integral with side scripts | 13.990 / 13.386 / 6.212 | 15.793 / 13.386 / 6.212 | -1.803 | +0.000 | +0.000 |
+| matrix 2x2 | 18.990 / 7.600 / 12.880 | 29.990 / 15.680 / 10.180 | -11.000 | -8.080 | +2.700 |
+| display style switch | 32.394 / 7.600 / 0.390 | 32.394 / 7.600 / 0.390 | +0.000 | +0.000 | +0.000 |
+| mathop under limits | 7.390 / 7.600 / 7.192 | 11.932 / 7.600 / 5.612 | -4.542 | +0.000 | +1.580 |
 | combined | 120.789 / 13.950 / 6.370 | 120.789 / 13.950 / 6.370 | +0.000 | +0.000 | +0.000 |
 
 ## What the deltas mean
 
-Ten of sixteen formulas agree within 0.01pt, including both fence cases and the
-radical over a fraction, which needs a stretched surd.
+Eleven of nineteen formulas agree within 0.01pt, including both fence cases,
+the radical over a fraction (which needs a stretched surd) and a style switch.
 
 - **Script alternates (`ssty`) were missing, now fixed.** Before the fix, the
   script-level glyphs were the base forms: script digits and letters had the
@@ -61,6 +64,23 @@ radical over a fraction, which needs a stretched surd.
   Rule 18a shifts both scripts by the stretched glyph's height and depth. The
   remaining width delta is the operator's lspace/rspace, which the row's
   spacing table owns. Both stacks pick the same variant (integral.v2).
+- **Tables pad inside the cell (MathML rule).** `matrix 2x2` is 11pt narrower
+  and 8.08pt shallower on ascent: formulary's `mtable` adds 0.4em padding
+  around every cell and a row strut, while this stack applies TeX's
+  `rraycolsep`/`rraystretch` gaps between cells and adds no outer padding.
+  The left glyph offset differs by exactly 4pt; the row pitch is 12.74pt
+  against 12.93pt, so the rest is padding and a small row strut, not a
+  different line-placement rule.
+- **Under scripts reserve side space (MathML rule).** `mathop under limits` is
+  4.542pt wider in formulary and 1.58pt deeper: MathML's `munder` keeps
+  lspace/rspace around the under script and places it below the operator with
+  its own gap, while TeX's Rule 18a centres the script under the operator with
+  the operator-script clearance. Both place the script's centre on the
+  operator's centre.
+- **A style switch does not move anything.** `display style switch` matches
+  exactly: `\displaystyle` on a group changes the cramped bit and the level's
+  constants, and in a formula whose glyphs are already text-sized neither stack
+  shifts a glyph or changes a width.
 
 ## Limits of this check
 
