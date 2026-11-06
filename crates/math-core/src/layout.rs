@@ -489,7 +489,10 @@ fn layout_row_with(
             _ => layout_node(cx, *id, size, style, diagnostics),
         };
         if nodes.len() == 1 {
+            // A one-element group is its element for script placement: it keeps
+            // the glyph's italic correction (KaTeX's `getBaseElem`).
             out.lone_glyph = child.lone_glyph;
+            out.italic = child.italic;
         }
         out.ascent = out.ascent.max(child.ascent);
         out.descent = out.descent.max(child.descent);
@@ -544,6 +547,19 @@ fn node_class(cx: &Cx<'_>, id: NodeId) -> AtomClass {
     }
 }
 
+/// The innermost node of a group holding one element (KaTeX's `getBaseElem`),
+/// which is what decides whether scripts see a character box.
+fn script_base_elem(cx: &Cx<'_>, id: NodeId) -> NodeId {
+    let mut current = id;
+    while let NodeKind::Row(children) = cx.model.kind(current) {
+        if children.len() != 1 {
+            break;
+        }
+        current = children[0];
+    }
+    current
+}
+
 /// TeX Appendix G Rules 18a–f with the MATH script constants.
 fn layout_scripts(
     cx: &Cx<'_>,
@@ -573,10 +589,10 @@ fn layout_scripts(
         return base;
     }
 
-    // KaTeX's `isCharacterBox` admits ordinary symbols but not operators, so a
-    // large operator's scripts follow its height and depth (Rule 18a).
+    // KaTeX's `isCharacterBox` looks through one-element groups and admits
+    // ordinary symbols but not operators, so those scripts follow 18a.
     let is_character = matches!(
-        cx.model.kind(base_node),
+        cx.model.kind(script_base_elem(cx, base_node)),
         NodeKind::Atom(atom) if atom.class != AtomClass::Op
     );
     let italic = base.italic;
@@ -681,6 +697,8 @@ fn layout_scripts(
 }
 
 fn takes_limits(cx: &Cx<'_>, id: NodeId) -> bool {
+    // Limits test the base node itself: KaTeX's builder delegate does not
+    // unwrap a group, so `{\sum}_i` keeps side scripts even in display.
     matches!(
         cx.model.kind(id),
         NodeKind::LargeOp { limits: true, .. }

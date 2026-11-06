@@ -513,6 +513,15 @@ model and geometry contracts.
   shift their scripts by the glyph's height and depth. The differential's
   integral case now matches formulary's ascent and descent exactly, and
   `large_operator_scripts_follow_its_height_and_depth` pins the branch.
+- **A one-element group is its element for script geometry.** `layout_scripts`
+  read the base `NodeKind` directly, so `{f}_1`'s base row failed KaTeX's
+  `isCharacterBox` — which unwraps one-element groups via `getBaseElem` — and
+  Rule 18a dropped the subscript by `SubscriptBaselineDropMin`. The row also
+  discarded its lone glyph's italic correction, leaving `{f}^2`'s exponent
+  short. Scripts now classify the innermost one-element group, and a lone-glyph
+  row carries its italic. Limits still test the base node itself, matching
+  `htmlBuilderDelegate`, which does not unwrap. Pinned by
+  `single_element_group_scripts_like_its_base`.
 - **TeX's three superscript shifts collapse to MATH's two.** TeX picks sup1,
   sup2 or sup3 for display, text and cramped text; MATH has only
   SuperscriptShiftUp and SuperscriptShiftUpCramped, so M1 uses the first for

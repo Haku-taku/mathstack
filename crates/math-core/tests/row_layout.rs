@@ -500,6 +500,29 @@ fn large_operator_scripts_follow_its_height_and_depth() {
 }
 
 #[test]
+fn single_element_group_scripts_like_its_base() {
+    // `{f}_1`: the subscript hangs from f's depth, not the group's baseline drop.
+    let (model, root) = Model::build(|m| {
+        let f = m.symbol('f');
+        let group = m.row(vec![f]);
+        let one = m.symbol('1');
+        m.scripts(group, None, Some(one))
+    });
+    let subscript = layout(&Slanted, &model, root, 10.0, Style::TEXT).0;
+    assert!(close(subscript.descent, 2.0 + 1.4));
+
+    // `{f}^2` keeps f's italic correction for the superscript.
+    let (model, root) = Model::build(|m| {
+        let f = m.symbol('f');
+        let group = m.row(vec![f]);
+        let two = m.symbol('2');
+        m.scripts(group, Some(two), None)
+    });
+    let superscript = layout(&Slanted, &model, root, 10.0, Style::TEXT).0;
+    assert!(close(glyphs(&superscript)[1].0, 5.0 + 2.0));
+}
+
+#[test]
 fn latin_letters_take_the_math_italic_codepoint() {
     assert_eq!(math_italic('a'), Some('\u{1D44E}'));
     assert_eq!(math_italic('H'), Some('\u{1D43B}'));
