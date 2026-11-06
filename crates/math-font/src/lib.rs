@@ -168,6 +168,12 @@ impl MathFont for Face<'_> {
 }
 
 impl Face<'_> {
+    /// Whether the face carries a MATH table, which is what makes it a math
+    /// font; a UI font list can ask without laying anything out.
+    pub fn has_math(&self) -> bool {
+        self.face.tables().math.is_some()
+    }
+
     /// Stacks assembly parts to reach `target`, repeating extenders and
     /// spreading a uniform overlap between the connectors.
     fn assemble(&self, parts: Vec<GlyphPart>, min_overlap: f32, target: f32) -> Option<Stretched> {
