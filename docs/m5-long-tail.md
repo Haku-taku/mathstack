@@ -211,6 +211,32 @@ so the result does not depend on where the item sits in the list. The fill
 covers the padded box, including the frame area; the frame rules are painted
 over it in their own color, and an outer `\color` does not repaint either.
 
+## Top-level line breaks
+
+`\\` and `\newline` outside a table are not modelled, and `\par` is a
+diagnostic. The decision rests on the sources rather than on rendering alone:
+
+- KaTeX 0.16.9 registers `\\` as `cr`, whose builders run only at the top level
+  (`src/functions/cr.js`); `\newline` is the macro `\\\relax`
+  (`src/macros.js`). Outside arrays it produces a hard break in inline mode,
+  and in display mode it breaks unless `strict: "error"` applies the
+  `newLineInDisplayMode` rule (`src/Settings.js`, `docs/options.md`). A
+  `\\[len]` becomes a margin above the next line.
+- LaTeX's `\[...\]` and `equation` are single-line display environments; line
+  breaks belong to `align`/`gather`/`multline`. The exact first error for
+  `\[a\\b\]` was not reproduced locally because the installation lacks format
+  files; the reference documentation is consistent that it is an error
+  `[unverified]`.
+- A single-column `Table` is not an equivalent model: it exposes cells and
+  alignment, fixes a 0.5 em row gap, and canonical output would name a
+  `gathered`/`array` environment instead of the source form. It would also
+  change the editor's root and caret assumptions.
+
+Revisit only when a host document needs multi-line formulas. The correct
+increment then is a first-class line-break leaf with multi-line layout and
+selection geometry, not a table wrapper. Until then both spellings stay an
+unknown-command diagnostic, which is faithful to LaTeX and visible.
+
 ## Decorated operators and `\displaylimits`
 
 `\varlimsup`, `\varliminf`, `\varinjlim` and `\varprojlim` are amsmath's

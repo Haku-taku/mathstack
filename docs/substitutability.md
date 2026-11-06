@@ -114,7 +114,7 @@ stretch and spacing, not a replacement target.
 | `CD` | commutative diagrams | not modelled | do not implement; rare, and its grid is not a table |
 | Colours, `\color`/`\textcolor`/`\colorbox`/`\fcolorbox` | coloured documents | supported | display items carry the colour; a `\color` declaration shares the style-switch scope, and a box fill is a background item painted before the content |
 | Style/class wrappers (`\displaystyle`, `\mathop`, the eight `\math*` classes, `\mathchoice`, `\mathstrut`) | custom operators and style control | supported | `\mathop{…}\limits` is the only way to declare a custom operator |
-| Top-level `\\`, `\newline`, `\par` | multi-line formulas | not modelled | defer until a host document requires it; KaTeX itself accepts them only in specific contexts `[unverified]` |
+| Top-level `\\`, `\newline`, `\par` | multi-line formulas | not modelled | defer until a host document requires it; KaTeX accepts `\\`/`\newline` outside arrays (display unless strict), has no `\par`, and LaTeX's single-line display environments reject breaks; a one-column table is not equivalent. See `m5-long-tail.md` |
 | Long-tail symbols (~420) | amsmath relations/arrows | table entries, pending | implement in batches driven by real documents, not by the probe list alone |
 | `\varlim*`, decorated operator bodies | amsmath limit operators | supported | a decorated `lim` is a `Function` under a decoration inside an `Op` class |
 | Full macro semantics (`\let`, `\edef`, `\expandafter`) | TeX packages | deliberately out of scope | do not implement; a token-list expander is the boundary |
