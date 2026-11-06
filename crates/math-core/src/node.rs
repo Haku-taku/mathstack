@@ -344,6 +344,15 @@ impl NodeKind {
         )
     }
 
+    /// Whether `slot` is a fixed-arity grid position. Deleting a cell or row
+    /// would change the table's shape, so editing clears its contents instead.
+    pub fn slot_is_structure(&self, slot: Slot) -> bool {
+        matches!(
+            (self, slot),
+            (NodeKind::Table { .. }, Slot::Row) | (NodeKind::TableRow { .. }, Slot::Cell)
+        )
+    }
+
     /// Whether `slot` may be empty, so deleting its child removes the slot
     /// itself; required slots keep an empty row for the caret.
     pub fn slot_is_optional(&self, slot: Slot) -> bool {

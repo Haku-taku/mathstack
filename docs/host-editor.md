@@ -136,6 +136,11 @@ slot's start and Delete moves it to its end; a further press leaves the
 structure. This stops a deletion at a slot boundary from walking into the
 base or the other required child.
 
+Table rows and cells are structural lists: text deletion clears the content
+inside a cell or row but never removes the cell itself, so a selection across
+a matrix row cannot change its column count. Row and cell removal remains a
+structural edit, not something Backspace does.
+
 ## IME
 
 `set_preedit` inserts a `Composition` node at the caret and replaces its text as
@@ -278,6 +283,8 @@ host depends on:
 - `empty_slots_leave_without_deleting_their_base` — Backspace/Delete in an
   empty script or degree keep the base, and a required empty slot moves the
   caret out without clearing its sibling;
+- `table_cells_survive_text_deletion` — clearing every cell and deleting a
+  selection across a matrix row leave its cells and separators in place;
 - `copying_a_parsed_subtree_preserves_its_structure` — a broad formula
   round-trips after every node is copied; dropping one child in
   `NodeKind::map_children` makes it fail;
@@ -305,6 +312,13 @@ another key. This is a manual check, not a golden-image gate.
   a table's midpoint produced a caret after the table instead of inside its
   cell. When the containing child is on the other side of the boundary, the
   path now records that child's index; the table-cell editing test pins it.
+- **Deleting a selection across a matrix row removed cells.** The range
+  deleter treated every list slot alike, so a fully selected cell was detached
+  from its `TableRow`; the row then held fewer cells than the table's column
+  count and the writer emitted a malformed matrix. `NodeKind::slot_is_structure`
+  marks table rows and cells, and both the range deleter and leaf removal now
+  clear their contents instead of removing them. Pinned by
+  `table_cells_survive_text_deletion`.
 - **Backspace at an empty slot deleted its base.** Deletion walked geometry
   stops and, when the caret sat at the start of an empty superscript, treated
   the script's base atom as the previous child and cleared it, so `x^` plus

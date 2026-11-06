@@ -536,3 +536,21 @@ fn empty_slots_leave_without_deleting_their_base() {
     assert!(press(&mut radical, Key::Backspace));
     assert_eq!(radical.source(), "\\sqrt {x}");
 }
+
+#[test]
+fn table_cells_survive_text_deletion() {
+    let mut table = editor("\\begin{matrix}a&b\\\\c&d\\end{matrix}");
+    for _ in 0..4 {
+        press(&mut table, Key::Backspace);
+    }
+    assert_eq!(table.source(), "\\begin {matrix} &  \\\\  & \\end {matrix}");
+    assert!(!press(&mut table, Key::Backspace));
+    assert_eq!(table.source(), "\\begin {matrix} &  \\\\  & \\end {matrix}");
+
+    press(&mut table, Key::Home);
+    for _ in 0..6 {
+        press_shift(&mut table, Key::Right);
+    }
+    press(&mut table, Key::Backspace);
+    assert_eq!(table.source(), "\\begin {matrix} &  \\\\  & \\end {matrix}");
+}

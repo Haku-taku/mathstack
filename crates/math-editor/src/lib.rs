@@ -1507,7 +1507,11 @@ impl Editor {
                 continue;
             }
             let inside = start >= low && end <= high;
-            if inside && parent_kind.slot_is_list(slot) && self.remove_node(child).is_ok() {
+            if inside
+                && parent_kind.slot_is_list(slot)
+                && !parent_kind.slot_is_structure(slot)
+                && self.remove_node(child).is_ok()
+            {
                 deleted = true;
                 continue;
             }
@@ -1729,7 +1733,8 @@ impl Editor {
     /// Removes a leaf from a list slot. A leaf in a single-child slot cannot
     /// be removed; the caller clears it with an empty row instead.
     fn remove_leaf(&mut self, candidate: NodeId, parent: NodeId, slot: Slot) -> bool {
-        if !self.model.kind(parent).slot_is_list(slot) {
+        let kind = self.model.kind(parent);
+        if !kind.slot_is_list(slot) || kind.slot_is_structure(slot) {
             return false;
         }
         self.remove_node(candidate).is_ok()
