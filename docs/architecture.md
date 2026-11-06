@@ -504,6 +504,15 @@ model and geometry contracts.
   identity — not their tables and font readers. The policy is now file-level
   adaptation with attribution (`THIRD-PARTY.md`), and the rejection entries
   above stand only for adopting a whole stack.
+- **A large operator is not a character box.** `layout_scripts` counted
+  `NodeKind::LargeOp` as one, citing KaTeX's `isCharacterBox`, which in fact
+  admits only `mathord`/`textord`/`atom`. Rule 18a was therefore skipped and
+  `\int_0^1` kept both scripts at the baseline minima, clustered in the middle
+  of the display glyph; the same held for every other large operator's side
+  scripts in text style. Operators (including literal operator characters) now
+  shift their scripts by the glyph's height and depth. The differential's
+  integral case now matches formulary's ascent and descent exactly, and
+  `large_operator_scripts_follow_its_height_and_depth` pins the branch.
 - **TeX's three superscript shifts collapse to MATH's two.** TeX picks sup1,
   sup2 or sup3 for display, text and cramped text; MATH has only
   SuperscriptShiftUp and SuperscriptShiftUpCramped, so M1 uses the first for

@@ -30,7 +30,7 @@ lays out the MathML. Display cases use `display="block"` and `Style::DISPLAY`.
 | parenthesized fraction | 16.356 / 10.360 / 4.860 | 16.356 / 10.360 / 4.860 | +0.000 | +0.000 | +0.000 |
 | bracketed square | 22.660 / 10.330 / 4.830 | 22.660 / 10.330 / 4.830 | +0.000 | +0.000 | +0.000 |
 | sum with limits | 15.560 / 15.534 / 11.706 | 23.338 / 15.534 / 11.706 | -7.778 | +0.000 | -0.000 |
-| integral with side scripts | 13.990 / 10.220 / 4.720 | 15.793 / 13.386 / 6.212 | -1.803 | -3.166 | -1.492 |
+| integral with side scripts | 13.990 / 13.386 / 6.212 | 15.793 / 13.386 / 6.212 | -1.803 | +0.000 | +0.000 |
 | combined | 120.789 / 13.950 / 6.370 | 120.789 / 13.950 / 6.370 | +0.000 | +0.000 | +0.000 |
 
 ## What the deltas mean
@@ -56,10 +56,11 @@ radical over a fraction, which needs a stretched surd.
   clearance and the 0.8·x-height minimum, while MathML Core uses
   SuperscriptBottomMin / SubSuperscriptGapMin. The glyph positions agree; only
   the shifts differ.
-- **Large-operator placement.** `integral with side scripts` differs by 3.166
-  in ascent: TeX centers a large operator on the math axis (Rule 13), MathML
-  Core leaves a `msubsup` base on the baseline. Both pick the same variant
-  (integral.v2); the width delta adds the operator's lspace/rspace.
+- **Large-operator scripts.** `integral with side scripts` now matches
+  formulary's ascent and descent: a large operator is not a character box, so
+  Rule 18a shifts both scripts by the stretched glyph's height and depth. The
+  remaining width delta is the operator's lspace/rspace, which the row's
+  spacing table owns. Both stacks pick the same variant (integral.v2).
 
 ## Limits of this check
 

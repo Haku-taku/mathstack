@@ -481,6 +481,25 @@ fn limits_are_display_only_and_clear_the_operator() {
 }
 
 #[test]
+fn large_operator_scripts_follow_its_height_and_depth() {
+    let (model, root) = Model::build(|m| {
+        let integral = m.large_op('∫', false);
+        let one = m.symbol('1');
+        let zero = m.symbol('0');
+        m.scripts(integral, Some(one), Some(zero))
+    });
+
+    // A wide operator is not a character box: the 12pt display glyph raises the
+    // superscript by 5.5 and drops the subscript by 4.5, not by the minima.
+    let display = layout(&Growable, &model, root, 10.0, Style::DISPLAY).0;
+    let glyphs = glyphs(&display);
+    assert!(close(display.ascent, 9.7));
+    assert!(close(display.descent, 5.9));
+    assert!(close(glyphs[1].1, 9.7 - 5.5));
+    assert!(close(glyphs[2].1, 9.7 + 4.5));
+}
+
+#[test]
 fn latin_letters_take_the_math_italic_codepoint() {
     assert_eq!(math_italic('a'), Some('\u{1D44E}'));
     assert_eq!(math_italic('H'), Some('\u{1D43B}'));

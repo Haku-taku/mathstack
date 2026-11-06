@@ -573,13 +573,13 @@ fn layout_scripts(
         return base;
     }
 
-    // A large operator is a single-glyph atom, so Rule 18a/18f treat it like
-    // a character box (KaTeX's `isCharacterBox`).
+    // KaTeX's `isCharacterBox` admits ordinary symbols but not operators, so a
+    // large operator's scripts follow its height and depth (Rule 18a).
     let is_character = matches!(
         cx.model.kind(base_node),
-        NodeKind::Atom(_) | NodeKind::LargeOp { .. }
+        NodeKind::Atom(atom) if atom.class != AtomClass::Op
     );
-    let italic = if is_character { base.italic } else { 0.0 };
+    let italic = base.italic;
     let x_height = cx.font.x_height() * em;
     let min_sup_shift = if style.cramped {
         constants.superscript_shift_up_cramped
