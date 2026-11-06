@@ -4,7 +4,7 @@
 //! every machine and needs no font at view time. That is also what makes this
 //! the CI fidelity path: rasterise the SVG and compare pixels.
 
-use math_core::{GlyphOutline, Item, Layout, PathSink};
+use math_core::{Color, GlyphOutline, Item, Layout, PathSink};
 use std::fmt::Write as _;
 
 pub struct Options {
@@ -40,33 +40,37 @@ pub fn to_svg(layout: &Layout, font: &dyn GlyphOutline, options: &Options) -> St
                 }
                 let _ = write!(
                     svg,
-                    "<path transform=\"translate({} {}) scale({} {})\" d=\"{}\"/>",
+                    "<path transform=\"translate({} {}) scale({} {})\" d=\"{}\"{paint}/>",
                     num(glyph.x + padding),
                     num(glyph.baseline + padding),
                     num(glyph.size),
                     num(-glyph.size),
-                    path.data
+                    path.data,
+                    paint = paint(glyph.color, "fill"),
                 );
             }
             Item::Rule(rule) => {
                 let _ = write!(
                     svg,
-                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/>",
+                    "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{paint}/>",
                     num(rule.x + padding),
                     num(rule.y + padding),
                     num(rule.width),
-                    num(rule.height)
+                    num(rule.height),
+                    paint = paint(rule.color, "fill"),
                 );
             }
             Item::Line(line) => {
                 let _ = write!(
                     svg,
                     "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" \
-                     stroke=\"#000000\" stroke-width=\"{}\"/>",
+                     stroke=\"{}\"{} stroke-width=\"{}\"/>",
                     num(line.x1 + padding),
                     num(line.y1 + padding),
                     num(line.x2 + padding),
                     num(line.y2 + padding),
+                    line.color.map_or("#000000".to_owned(), hex),
+                    opacity(line.color, "stroke"),
                     num(line.thickness)
                 );
             }
@@ -74,6 +78,32 @@ pub fn to_svg(layout: &Layout, font: &dyn GlyphOutline, options: &Options) -> St
     }
     svg.push_str("</g></svg>");
     svg
+}
+
+/// A `fill`/`stroke` override, or nothing so the group's default shows through.
+fn paint(color: Option<Color>, attribute: &str) -> String {
+    let Some(color) = color else {
+        return String::new();
+    };
+    format!(
+        " {attribute}=\"{}\"{}",
+        hex(color),
+        opacity(Some(color), attribute)
+    )
+}
+
+fn opacity(color: Option<Color>, attribute: &str) -> String {
+    match color {
+        Some(color) if !color.is_opaque() => format!(
+            " {attribute}-opacity=\"{}\"",
+            num(f32::from(color.alpha) / 255.0)
+        ),
+        _ => String::new(),
+    }
+}
+
+fn hex(color: Color) -> String {
+    format!("#{:02x}{:02x}{:02x}", color.red, color.green, color.blue)
 }
 
 #[derive(Default)]

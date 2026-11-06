@@ -50,7 +50,7 @@ pub fn command_shape(name: &str) -> CommandShape {
         "xrightarrow" | "xleftarrow" => CommandShape::OptionalUnderArgument,
         "text" | "operatorname" | "operatornamewithlimits" => CommandShape::NameArgument,
         "hspace" => CommandShape::Length,
-        "genfrac" | "substack" | "pmod" => CommandShape::Special,
+        "genfrac" | "substack" | "pmod" | "color" | "textcolor" => CommandShape::Special,
         "not" => CommandShape::SymbolArgument,
         "mod" | "pod" => CommandShape::MathArgument,
         "left" | "right" | "middle" => CommandShape::Delimiter,

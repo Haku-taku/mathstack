@@ -4,6 +4,7 @@
 //! place: an unknown command becomes an `Error` node so the rest of the
 //! formula still parses and stays editable.
 
+mod colors;
 mod commands;
 mod lexer;
 mod macros;
@@ -86,6 +87,7 @@ fn contains_error(model: &Model, id: NodeId) -> bool {
         | NodeKind::Boxed { body }
         | NodeKind::Cancel { body, .. }
         | NodeKind::Styled { body, .. }
+        | NodeKind::Color { body, .. }
         | NodeKind::Class { body, .. }
         | NodeKind::UnderArrow { body, .. } => contains_error(model, *body),
         NodeKind::Arrow { over, under, .. } => {

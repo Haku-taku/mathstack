@@ -6,7 +6,7 @@ use crate::lexer::{Token, TokenKind};
 use crate::spellings::{OperatorDecoration, Spelling, Spellings};
 use crate::symbols;
 use math_core::{
-    Alignment, Atom, AtomClass, ColumnSpacing, Diagnostic, FractionRule, Length, LengthUnit,
+    Alignment, Atom, AtomClass, Color, ColumnSpacing, Diagnostic, FractionRule, Length, LengthUnit,
     Limits, Model, ModelBuilder, NodeId, NodeKind, Origin, PhantomKind, Size, SpaceKind, Span,
     Style, Variant,
 };
@@ -36,7 +36,27 @@ enum RowStep {
     Infix(String, Span),
     /// A style switch, which applies to the row's remaining children.
     Style(String),
+    /// A `\color` declaration, which applies to the same scope.
+    Color,
     Item,
+}
+
+/// A declaration that governs the rest of its group. Closing latest-first
+/// nests a later declaration inside an earlier one, so a color keeps its
+/// scope across a style switch and vice versa.
+enum Pending {
+    Style {
+        size: Size,
+        span: Span,
+        first: usize,
+        origin: Origin,
+    },
+    Color {
+        color: Color,
+        span: Span,
+        first: usize,
+        origin: Origin,
+    },
 }
 
 enum TextArgument {
@@ -132,8 +152,8 @@ impl Parser<'_> {
         }
 
         let mut children = Vec::new();
-        // The style switch in effect and the row index where its scope starts.
-        let mut pending: Option<(Size, Span, usize, Origin)> = None;
+        // The declarations in effect and the row index where each scope starts.
+        let mut pending: Vec<Pending> = Vec::new();
         loop {
             if self.nodes >= MAX_NODES {
                 if !self.over_budget {
@@ -162,6 +182,7 @@ impl Parser<'_> {
                 TokenKind::Command(name) if style_size(name).is_some() => {
                     RowStep::Style(name.clone())
                 }
+                TokenKind::Command(name) if name == "color" => RowStep::Color,
                 _ => RowStep::Item,
             };
             match step {
@@ -175,15 +196,28 @@ impl Parser<'_> {
                     self.error(span, "`\\right` without `\\left`");
                 }
                 RowStep::Infix(name, command_span) => {
-                    self.close_style(&mut children, &mut pending);
+                    self.close_switches(&mut children, &mut pending);
                     return self.parse_infix(&name, command_span, start, children, depth, stop);
                 }
                 RowStep::Style(name) => {
                     let token = self.advance().expect("peeked a command");
                     let size = style_size(&name).expect("matched above");
-                    // The previous switch ends where this one starts.
-                    self.close_style(&mut children, &mut pending);
-                    pending = Some((size, token.span, children.len(), token.origin));
+                    pending.push(Pending::Style {
+                        size,
+                        span: token.span,
+                        first: children.len(),
+                        origin: token.origin,
+                    });
+                }
+                RowStep::Color => {
+                    let token = self.advance().expect("peeked a command");
+                    let (color, _) = self.color_argument("\\color", token.span);
+                    pending.push(Pending::Color {
+                        color,
+                        span: token.span,
+                        first: children.len(),
+                        origin: token.origin,
+                    });
                 }
                 RowStep::Item => {
                     let item = self.parse_item(depth);
@@ -191,7 +225,7 @@ impl Parser<'_> {
                 }
             }
         }
-        self.close_style(&mut children, &mut pending);
+        self.close_switches(&mut children, &mut pending);
 
         let end = children
             .last()
@@ -199,39 +233,68 @@ impl Parser<'_> {
         self.make(NodeKind::Row(children), Span::new(start, end.max(start)))
     }
 
-    /// Wraps the siblings a style switch governs in its node. TeX scopes the
-    /// switch to the rest of the group, so whatever follows belongs to it.
-    fn close_style(
-        &mut self,
-        children: &mut Vec<NodeId>,
-        pending: &mut Option<(Size, Span, usize, Origin)>,
-    ) {
-        let Some((size, command_span, first, origin)) = pending.take() else {
-            return;
-        };
-        // A macro-expanded switch covers its call site, not the source that
-        // follows the expansion.
-        let expanded = origin != Origin::Source;
-        let body_children = children.split_off(first);
-        let end = if expanded {
-            command_span.end
-        } else {
-            body_children
-                .last()
-                .map_or(command_span.end, |child| self.span_of(*child).end)
-        };
-        let body = self.make(
-            NodeKind::Row(body_children),
-            Span::new(command_span.end, end.max(command_span.end)),
-        );
-        let node = self.make(
-            NodeKind::Styled { size, body },
-            Span::new(command_span.start, end.max(command_span.end)),
-        );
-        if expanded {
-            self.model.set_origin(node, origin);
+    /// Wraps the siblings each declaration governs in its node. TeX scopes
+    /// both a style switch and a `\color` to the rest of the group, so closing
+    /// the latest declaration first puts it inside the earlier ones.
+    fn close_switches(&mut self, children: &mut Vec<NodeId>, pending: &mut Vec<Pending>) {
+        while let Some(declaration) = pending.pop() {
+            let (command_span, first, origin) = match &declaration {
+                Pending::Style {
+                    span,
+                    first,
+                    origin,
+                    ..
+                }
+                | Pending::Color {
+                    span,
+                    first,
+                    origin,
+                    ..
+                } => (*span, *first, *origin),
+            };
+            // A macro-expanded declaration covers its call site, not the
+            // source that follows the expansion.
+            let expanded = origin != Origin::Source;
+            let body_children = children.split_off(first);
+            let end = if expanded {
+                command_span.end
+            } else {
+                body_children
+                    .last()
+                    .map_or(command_span.end, |child| self.span_of(*child).end)
+            };
+            // A declaration over one item keeps that item as its body; a
+            // textcolor's single argument has the same shape, so the canonical
+            // form re-parses without an extra row.
+            let mut body_children = body_children;
+            let body = if matches!(declaration, Pending::Color { .. }) && body_children.len() == 1 {
+                body_children.remove(0)
+            } else {
+                self.make(
+                    NodeKind::Row(body_children),
+                    Span::new(command_span.end, end.max(command_span.end)),
+                )
+            };
+            let span = Span::new(command_span.start, end.max(command_span.end));
+            let node = match declaration {
+                Pending::Style { size, .. } => self.make(NodeKind::Styled { size, body }, span),
+                Pending::Color { color, .. } => {
+                    let node = self.make(NodeKind::Color { color, body }, span);
+                    self.spellings.insert(
+                        node,
+                        Spelling::color_declaration(
+                            format!("\\color{{{}}}", crate::colors::write(color)),
+                            color,
+                        ),
+                    );
+                    node
+                }
+            };
+            if expanded {
+                self.model.set_origin(node, origin);
+            }
+            children.push(node);
         }
-        children.push(node);
     }
 
     /// `\atop`, `\over` and the delimited variants consume the rest of the
@@ -848,6 +911,27 @@ impl Parser<'_> {
                     },
                     Span::new(span.start, end),
                 )
+            }
+            "textcolor" => {
+                self.advance();
+                let (color, _) = self.color_argument("\\textcolor", span);
+                let body = self.parse_argument(depth + 1, "\\textcolor");
+                let end = self.span_of(body).end.max(span.end);
+                self.make(NodeKind::Color { color, body }, Span::new(span.start, end))
+            }
+            "color" => {
+                self.advance();
+                let (color, _) = self.color_argument("\\color", span);
+                let body = self.make(NodeKind::Row(Vec::new()), Span::empty(span.end));
+                let node = self.make(NodeKind::Color { color, body }, span);
+                self.spellings.insert(
+                    node,
+                    Spelling::color_declaration(
+                        format!("\\color{{{}}}", crate::colors::write(color)),
+                        color,
+                    ),
+                );
+                node
             }
             "phantom" | "hphantom" | "vphantom" => {
                 self.advance();
@@ -1702,6 +1786,63 @@ impl Parser<'_> {
             }
             TextArgument::Unavailable(_) => None,
         }
+    }
+
+    /// Reads a color argument as literal characters. Token kinds survive macro
+    /// expansion, so an expanded color still reads its text.
+    fn color_argument(&mut self, command: &str, span: Span) -> (Color, Span) {
+        let Some(open) = self.peek().cloned() else {
+            self.error(span, format!("missing color for {command}"));
+            return (Color::BLACK, span);
+        };
+        if !matches!(open.kind, TokenKind::LBrace) {
+            self.error(open.span, format!("expected `{{` after {command}"));
+            return (Color::BLACK, open.span);
+        }
+        self.advance();
+        let mut text = String::new();
+        let mut invalid = false;
+        let mut depth = 0usize;
+        while let Some(token) = self.peek().cloned() {
+            match token.kind {
+                TokenKind::RBrace if depth == 0 => {
+                    self.advance();
+                    let span = Span::new(open.span.start, token.span.end);
+                    if invalid {
+                        self.error(span, "invalid color argument");
+                        return (Color::BLACK, span);
+                    }
+                    return match crate::colors::parse(&text) {
+                        Ok(color) => (color, span),
+                        Err(message) => {
+                            self.error(span, message);
+                            (Color::BLACK, span)
+                        }
+                    };
+                }
+                TokenKind::RBrace => {
+                    depth = depth.saturating_sub(1);
+                    invalid = true;
+                    self.advance();
+                }
+                TokenKind::LBrace => {
+                    depth += 1;
+                    invalid = true;
+                    self.advance();
+                }
+                TokenKind::Symbol(symbol) if depth == 0 => {
+                    text.push(symbol);
+                    self.advance();
+                }
+                _ => {
+                    invalid = true;
+                    self.advance();
+                }
+            }
+        }
+        let end = self.caret();
+        self.error(Span::new(span.start, end), "unclosed color argument");
+        (Color::BLACK, Span::new(span.start, end))
     }
 
     fn text_argument(&mut self, command: &str, span: Span) -> TextArgument {

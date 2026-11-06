@@ -53,7 +53,7 @@ differential parses its corpus from LaTeX; the earlier milestones are in
 - TeX programming beyond a small macro subset (`\def`/`\newcommand` with `#n`,
   no `\edef`, no delimited parameter text, no catcodes).
 - Line breaking inside formulas; page layout; floats.
-- MathML import/export; colour; tags and references; `\includegraphics`.
+- MathML import/export; tags and references; `\includegraphics`.
 - Full command coverage. The long tail is a maintenance programme, not a phase.
 
 ## Shape

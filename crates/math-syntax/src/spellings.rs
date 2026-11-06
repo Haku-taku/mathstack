@@ -5,7 +5,8 @@
 //! writer emits it only while the node still has the shape it was read from.
 
 use math_core::{
-    AtomClass, DelimiterSize, Limits, Model, NodeId, NodeKind, PhantomKind, SpaceKind, Variant,
+    AtomClass, Color, DelimiterSize, Limits, Model, NodeId, NodeKind, PhantomKind, SpaceKind,
+    Variant,
 };
 use std::collections::BTreeMap;
 
@@ -53,6 +54,10 @@ pub(crate) enum SpellingKind {
     },
     /// `\mathstrut`, stored as `\vphantom{(}`.
     MathStrut,
+    /// A `\color` declaration; `\textcolor` keeps the canonical wrapper form.
+    ColorDeclaration {
+        color: Color,
+    },
 }
 
 /// The decoration a named operator command wraps around its `lim`.
@@ -145,6 +150,9 @@ impl Spelling {
                 symbol == current
             }
             (SpellingKind::Text { content }, NodeKind::Text(current)) => content == current,
+            (SpellingKind::ColorDeclaration { color }, NodeKind::Color { color: current, .. }) => {
+                color == current
+            }
             (
                 SpellingKind::MathStrut,
                 NodeKind::Phantom {
@@ -200,6 +208,15 @@ pub struct Spellings {
 }
 
 impl Spelling {
+    /// A `\color` declaration, which the writer prints without braces around
+    /// its body so the scope stays the rest of the surrounding group.
+    pub(crate) fn color_declaration(text: String, color: Color) -> Self {
+        Spelling {
+            text,
+            kind: SpellingKind::ColorDeclaration { color },
+        }
+    }
+
     /// `\mathstrut`, which the model stores as a zero-width vertical phantom.
     pub(crate) fn math_strut(text: String) -> Self {
         Spelling {

@@ -1,5 +1,5 @@
 use math_core::{
-    Alignment, Atom, AtomClass, ColumnSpacing, Constants, DelimiterSize, FractionRule, Gap,
+    Alignment, Atom, AtomClass, Color, ColumnSpacing, Constants, DelimiterSize, FractionRule, Gap,
     GlyphId, InkBounds, Item, Layout, Length, LengthUnit, Limits, MathFont, Model, ModelBuilder,
     NodeId, NodeKind, PhantomKind, ShapedGlyph, ShapedRun, Size, Span, Stretched, Style,
     TextShaper, TextStyle, Variant, gap, layout, layout_with_shaper, math_italic, variant_char,
@@ -1360,4 +1360,48 @@ fn mathstrut_shape_keeps_the_paren_extent_in_every_style() {
     assert!(close(script.width, 7.0));
     assert!(close(script.ascent, 4.2));
     assert!(close(script.descent, 1.4));
+}
+
+#[test]
+fn color_reaches_nested_glyphs_and_rules() {
+    let blue = Color::rgb(0, 0, 255);
+    let red = Color::rgb(255, 0, 0);
+    let (model, _) = Model::build(|m| {
+        let inner = {
+            let a = m.symbol('a');
+            let body = m.row(vec![a]);
+            m.color(blue, body)
+        };
+        let fraction = {
+            let numerator = m.symbol('x');
+            let denominator = m.symbol('y');
+            m.fraction(numerator, denominator, true)
+        };
+        let body = m.row(vec![inner, fraction]);
+        m.color(red, body)
+    });
+
+    let layout = measured(&model, Style::TEXT);
+    let glyphs: Vec<Option<Color>> = layout
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Glyph(glyph) => Some(glyph.color),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        glyphs,
+        vec![Some(blue), Some(red), Some(red)],
+        "the inner color wins and the outer one reaches the fraction's glyphs"
+    );
+    let rules: Vec<Option<Color>> = layout
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Rule(rule) => Some(rule.color),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rules, vec![Some(red)], "the fraction bar is colored");
 }

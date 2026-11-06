@@ -1,6 +1,6 @@
 use math_core::{
-    Alignment, AtomClass, ColumnSpacing, FractionRule, Limits, Model, NodeId, NodeKind, Origin,
-    Size, SpaceKind, Span, Style, Variant,
+    Alignment, AtomClass, Color, ColumnSpacing, FractionRule, Limits, Model, NodeId, NodeKind,
+    Origin, Size, SpaceKind, Span, Style, Variant,
 };
 use math_syntax::{
     CommandShape, command_shape, command_template, parse, to_latex, to_latex_with_spans,
@@ -185,6 +185,11 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
         }
         NodeKind::Styled { size, body } => {
             out.push_str(&format!("Styled({size:?},"));
+            write_dump(model, *body, out);
+            out.push(')');
+        }
+        NodeKind::Color { color, body } => {
+            out.push_str(&format!("Color({color:?},"));
             write_dump(model, *body, out);
             out.push(')');
         }
@@ -648,6 +653,97 @@ fn mathstrut_is_a_vertical_paren_phantom() {
     assert!(matches!(model.kind(*body), NodeKind::Atom(atom) if atom.symbol == '('));
     assert_eq!(document.to_latex(), "a\\mathstrut b");
     assert_eq!(to_latex(model, root), "a\\vphantom {(}b");
+}
+
+#[test]
+fn color_declarations_scope_to_the_group_and_nest() {
+    let document = parse("\\color{red}a\\textcolor{blue}{b}c");
+    let model = &document.model;
+    let NodeKind::Color { color, body } = model.kind(row(model, document.root())[0]) else {
+        panic!("expected the color declaration");
+    };
+    assert_eq!(*color, Color::rgb(255, 0, 0));
+    let NodeKind::Row(children) = model.kind(*body) else {
+        panic!("expected the declaration body");
+    };
+    assert_eq!(
+        children.len(),
+        3,
+        "the declaration covers `a`, the textcolor and `c`"
+    );
+    let NodeKind::Color { color, .. } = model.kind(children[1]) else {
+        panic!("expected the textcolor wrapper");
+    };
+    assert_eq!(*color, Color::rgb(0, 0, 255));
+    assert_eq!(document.to_latex(), "\\color{red}a\\textcolor {blue}{b}c");
+}
+
+#[test]
+fn color_and_style_switches_keep_their_source_order() {
+    for (source, expected, style_is_outer) in [
+        (
+            "\\displaystyle\\color{red}a",
+            "\\displaystyle \\color{red}a",
+            true,
+        ),
+        (
+            "\\color{red}\\displaystyle a",
+            "\\color{red}\\displaystyle a",
+            false,
+        ),
+    ] {
+        let document = parse(source);
+        let model = &document.model;
+        let outer = model.kind(row(model, document.root())[0]);
+        if style_is_outer {
+            let NodeKind::Styled { body, .. } = outer else {
+                panic!("expected the style wrapper first for {source}");
+            };
+            let NodeKind::Row(children) = model.kind(*body) else {
+                panic!("expected a body row for {source}");
+            };
+            assert!(
+                matches!(model.kind(children[0]), NodeKind::Color { .. }),
+                "the color switch still wraps the atom"
+            );
+        } else {
+            let NodeKind::Color { body, .. } = outer else {
+                panic!("expected the color wrapper first for {source}");
+            };
+            assert!(
+                matches!(model.kind(*body), NodeKind::Styled { .. }),
+                "the style switch still wraps the atom"
+            );
+        }
+        assert_eq!(document.to_latex(), expected);
+    }
+}
+
+#[test]
+fn textcolor_and_color_write_back_their_own_forms() {
+    let textcolor = parse("\\textcolor{red}{x}");
+    assert_eq!(textcolor.to_latex(), "\\textcolor {red}{x}");
+    assert_eq!(
+        to_latex(&textcolor.model, textcolor.root()),
+        "\\textcolor {red}{x}"
+    );
+
+    let declaration = parse("\\color{red}x");
+    assert_eq!(declaration.to_latex(), "\\color{red}x");
+    let canonical = to_latex(&declaration.model, declaration.root());
+    assert_eq!(canonical, "\\textcolor {red}{x}");
+    let reparsed = parse(&canonical);
+    assert_eq!(
+        dump(&declaration.model, declaration.root()),
+        dump(&reparsed.model, reparsed.root())
+    );
+
+    let hex = parse("\\textcolor{#1a2b3c}{x}");
+    assert!(!hex.has_errors(), "{:?}", hex.diagnostics);
+    assert_eq!(hex.to_latex(), "\\textcolor {#1a2b3c}{x}");
+
+    let unknown = parse("\\textcolor{bogus}{x}");
+    assert_eq!(unknown.diagnostics.len(), 1, "an unknown name is reported");
 }
 
 #[test]
@@ -1382,17 +1478,25 @@ fn style_switch_scopes_to_the_end_of_its_group() {
     assert_eq!(styled.len(), 3, "the switch covers `a+b`");
     assert!(document.to_latex().starts_with("{\\displaystyle a+b}c"));
 
-    // A second switch closes the first one and takes over the rest.
+    // A second switch nests inside the first: it governs the rest while the
+    // earlier switch still wraps it, and the inner level wins where they
+    // overlap. A color declaration shares this scope rule, which is why the
+    // declarations cannot become siblings.
     let document = parse("\\displaystyle a\\textstyle b");
     let children = row(&document.model, document.root());
-    let sizes: Vec<Size> = children
-        .iter()
-        .map(|child| match document.model.kind(*child) {
-            NodeKind::Styled { size, .. } => *size,
-            other => panic!("expected a style wrapper, found {other:?}"),
-        })
-        .collect();
-    assert_eq!(sizes, vec![Size::Display, Size::Text]);
+    let NodeKind::Styled { size, body } = document.model.kind(children[0]) else {
+        panic!("expected the outer style wrapper");
+    };
+    assert_eq!(*size, Size::Display);
+    let NodeKind::Row(inner) = document.model.kind(*body) else {
+        panic!("expected the outer body row");
+    };
+    assert_eq!(inner.len(), 2, "`a` and the inner switch");
+    let NodeKind::Styled { size, .. } = document.model.kind(inner[1]) else {
+        panic!("expected the inner style wrapper");
+    };
+    assert_eq!(*size, Size::Text);
+    assert_eq!(document.to_latex(), "\\displaystyle a\\textstyle b");
 }
 
 #[test]

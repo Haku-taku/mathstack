@@ -7,6 +7,7 @@
 
 pub mod atom;
 pub mod class;
+pub mod color;
 pub mod display;
 pub mod font;
 pub mod geometry;
@@ -18,6 +19,7 @@ pub mod text;
 
 pub use atom::{Atom, Variant, math_italic, variant_char};
 pub use class::{AtomClass, Gap, gap};
+pub use color::Color;
 pub use display::{GlyphItem, Item, Layout, LineItem, RuleItem};
 pub use font::{Constants, GlyphId, GlyphOutline, InkBounds, MathFont, PathSink, Stretched};
 pub use geometry::{CaretPath, CaretRect, EmptySlot, Geometry, Point, Rect, Step};

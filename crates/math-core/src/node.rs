@@ -6,6 +6,7 @@
 
 use crate::atom::Atom;
 use crate::class::AtomClass;
+use crate::color::Color;
 use crate::span::Span;
 use crate::style::{Size, Style};
 
@@ -330,6 +331,12 @@ pub enum NodeKind {
         size: Size,
         body: NodeId,
     },
+    /// A color over a body: `\textcolor`, or the scope of a `\color`
+    /// declaration.
+    Color {
+        color: Color,
+        body: NodeId,
+    },
     /// An explicit atom class over a body (`\mathop{…}` and its siblings).
     Class {
         class: AtomClass,
@@ -502,6 +509,7 @@ impl NodeKind {
             | NodeKind::Boxed { body }
             | NodeKind::Cancel { body, .. }
             | NodeKind::Styled { body, .. }
+            | NodeKind::Color { body, .. }
             | NodeKind::Class { body, .. }
             | NodeKind::UnderArrow { body, .. } => vec![ChildSlot {
                 slot: if matches!(self, NodeKind::Accent { .. }) {
@@ -673,6 +681,10 @@ impl NodeKind {
             },
             NodeKind::Styled { size, body } => NodeKind::Styled {
                 size: *size,
+                body: map(*body),
+            },
+            NodeKind::Color { color, body } => NodeKind::Color {
+                color: *color,
                 body: map(*body),
             },
             NodeKind::Class {
@@ -1083,6 +1095,7 @@ impl Model {
             | NodeKind::Cancel { body, .. }
             | NodeKind::HorizontalBrace { body, .. }
             | NodeKind::Styled { body, .. }
+            | NodeKind::Color { body, .. }
             | NodeKind::Class { body, .. }
             | NodeKind::UnderArrow { body, .. } => match slot {
                 Slot::Body => Some(std::mem::replace(body, child)),
@@ -1489,6 +1502,10 @@ impl ModelBuilder {
 
     pub fn styled(&mut self, size: Size, body: NodeId) -> NodeId {
         self.alloc(NodeKind::Styled { size, body }, Span::default())
+    }
+
+    pub fn color(&mut self, color: Color, body: NodeId) -> NodeId {
+        self.alloc(NodeKind::Color { color, body }, Span::default())
     }
 
     /// A class wrapper; only an `Op` class reacts to `limits`.

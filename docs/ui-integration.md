@@ -51,7 +51,7 @@ replace the LaTeX/MathML/formulary body with `math-syntax` + `math-font` +
 | `layout` (strict) | `math_syntax::parse` + `layout_with_geometry`; any diagnostic → `Error::Latex` | mathstack's parser recovers rather than aborting, so strictness is the adapter's decision |
 | `layout_recovering` | the same parse + layout; diagnostics that only say a group is incomplete are not marks | needs a structured diagnostic kind, see below |
 | `Formula.width/ascent/descent` | `Layout` of the same names | |
-| `MathItem::Glyph` | `math_core::Item::Glyph` | `advance` from `Face::advance`; `color: None`; `mirrored: false` |
+| `MathItem::Glyph` | `math_core::Item::Glyph` | `advance` from `Face::advance`; `color` from the item; `mirrored: false` |
 | `MathItem::Rule` | `math_core::Item::Rule` (`y` is the top edge) | |
 | `MathItem::Background` | none | only MathML `mathbackground` produces one today |
 | `Formula.errors` | `Error` nodes' geometry (`Geometry::rect_of`) plus the diagnostic for that span | message text comes from `Diagnostic::message` |
@@ -77,10 +77,11 @@ assumption the adapter must test first on a real system face.
    (`text_pass.rs:550`) draws only glyphs, rules and backgrounds. Either add a
    stroked segment to `ui-core` and the rasterizer, or accept that replacing
    the pipeline drops `\cancel` (formulary does not draw it either).
-3. **Colours.** mathstack does not model `\color`/`\textcolor` yet (queue
-   4.7), and every `MathItem::Glyph.color` would be `None`. A document with a
-   coloured formula would show an unknown-command mark instead of the current
-   colour. Decide whether 4.7 lands before the replacement.
+3. **Colours.** `\color`/`\textcolor` now reach `Item::Glyph.color`,
+   `Item::Rule.color` and `Item::Line.color` as `math_core::Color`. Both
+   `MathItem::Glyph` and `MathItem::Rule` already carry `color: Option<Color>`
+   (`ui-core/src/math.rs`), so the adapter maps each directly; only the
+   stroked line has no UI counterpart, as the cancellation gap notes.
 4. **RTL mirroring.** MathML can ask for mirrored glyphs; mathstack has no
    RTL input, so `mirrored` is always false. The paint path already refuses a
    mirrored item, so there is no regression, only a capability it never had.

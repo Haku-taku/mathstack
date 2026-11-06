@@ -10,6 +10,7 @@
 
 use crate::atom::{Atom, Variant, math_italic, variant_char};
 use crate::class::{AtomClass, gap};
+use crate::color::Color;
 use crate::display::{GlyphItem, Item, Layout, LineItem, RuleItem};
 use crate::font::{GlyphId, MathFont, Stretched};
 use crate::geometry::Geometry;
@@ -187,6 +188,23 @@ impl MathBox {
         });
     }
 
+    /// Claims every item no inner color already painted.
+    fn tint(&mut self, color: Color) {
+        for placed in &mut self.children {
+            placed.child.tint(color);
+        }
+        for item in &mut self.items {
+            let slot = match item {
+                Item::Glyph(glyph) => &mut glyph.color,
+                Item::Rule(rule) => &mut rule.color,
+                Item::Line(line) => &mut line.color,
+            };
+            if slot.is_none() {
+                *slot = Some(color);
+            }
+        }
+    }
+
     /// Emits every painted item in the caller's coordinates, children first
     /// so a base's ink precedes a mark drawn over it.
     fn flatten(&self, dx: f32, dy: f32, out: &mut Vec<Item>) {
@@ -347,6 +365,9 @@ fn layout_kind(
             };
             layout_wrapped(cx, *body, size, forced, diagnostics)
         }
+        NodeKind::Color { color, body } => {
+            layout_color(cx, *color, *body, size, style, diagnostics)
+        }
         NodeKind::Class { body, .. } => layout_wrapped(cx, *body, size, style, diagnostics),
         NodeKind::MathChoice {
             display,
@@ -397,7 +418,26 @@ fn layout_wrapped(
     style: Style,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> MathBox {
-    let inner = layout_node(cx, body, size, style, diagnostics);
+    wrap_transparent(layout_node(cx, body, size, style, diagnostics))
+}
+
+/// Paints the body after laying it out. An inner color has already claimed its
+/// own items, so the outer one fills only what is still uncolored; that is why
+/// no layout function takes a color parameter.
+fn layout_color(
+    cx: &Cx<'_>,
+    color: Color,
+    body: NodeId,
+    size: f32,
+    style: Style,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> MathBox {
+    let mut inner = layout_node(cx, body, size, style, diagnostics);
+    inner.tint(color);
+    wrap_transparent(inner)
+}
+
+fn wrap_transparent(inner: MathBox) -> MathBox {
     let mut out = MathBox {
         width: inner.width,
         ascent: inner.ascent,
@@ -454,6 +494,7 @@ fn layout_atom(
         id: None,
         children: Vec::new(),
         items: vec![Item::Glyph(GlyphItem {
+            color: None,
             glyph,
             x: 0.0,
             baseline: 0.0,
@@ -500,6 +541,7 @@ fn layout_text(
     out.descent = run.descent * em;
     for glyph in run.glyphs {
         out.items.push(Item::Glyph(GlyphItem {
+            color: None,
             glyph: glyph.glyph,
             x: glyph.x * em,
             baseline: -glyph.y * em,
@@ -636,10 +678,14 @@ fn node_class(cx: &Cx<'_>, id: NodeId, style: Style) -> AtomClass {
         NodeKind::Class { class, .. } => *class,
         // A style switch is transparent when it wraps one element, so the
         // spacing either side still sees that element's class.
-        NodeKind::Styled { body, .. } => match cx.model.kind(*body) {
-            NodeKind::Row(children) if children.len() == 1 => node_class(cx, children[0], style),
-            _ => AtomClass::Ord,
-        },
+        NodeKind::Styled { body, .. } | NodeKind::Color { body, .. } => {
+            match cx.model.kind(*body) {
+                NodeKind::Row(children) if children.len() == 1 => {
+                    node_class(cx, children[0], style)
+                }
+                _ => AtomClass::Ord,
+            }
+        }
         // The selected branch stands in for the whole node, as TeX expands it
         // before spacing is computed.
         NodeKind::MathChoice {
@@ -981,6 +1027,7 @@ fn delimiter_box(
             id: None,
             children: Vec::new(),
             items: vec![Item::Glyph(GlyphItem {
+                color: None,
                 glyph,
                 x: 0.0,
                 baseline: 0.0,
@@ -1110,6 +1157,7 @@ fn layout_accent(
     };
     out.push_child(base, base_dx, 0.0, Slot::Base);
     out.items.push(Item::Glyph(GlyphItem {
+        color: None,
         glyph,
         x: dx,
         baseline: -shift_up,
@@ -1157,6 +1205,7 @@ fn layout_cancel(
     let thickness = 0.04 * em;
     let mut diagonal = |x1: f32, y1: f32, x2: f32, y2: f32| {
         out.items.push(Item::Line(LineItem {
+            color: None,
             x1,
             y1,
             x2,
@@ -1221,6 +1270,7 @@ fn layout_bar(
     };
     out.push_child(body, 0.0, 0.0, Slot::Body);
     out.items.push(Item::Rule(RuleItem {
+        color: None,
         x: 0.0,
         y: rule_y,
         width,
@@ -1326,24 +1376,28 @@ fn layout_boxed(
     out.push_child(body, padding + thickness, 0.0, Slot::Body);
     let height = ascent + descent;
     out.items.push(Item::Rule(RuleItem {
+        color: None,
         x: 0.0,
         y: -ascent,
         width,
         height: thickness,
     }));
     out.items.push(Item::Rule(RuleItem {
+        color: None,
         x: 0.0,
         y: descent - thickness,
         width,
         height: thickness,
     }));
     out.items.push(Item::Rule(RuleItem {
+        color: None,
         x: 0.0,
         y: -ascent,
         width: thickness,
         height,
     }));
     out.items.push(Item::Rule(RuleItem {
+        color: None,
         x: width - thickness,
         y: -ascent,
         width: thickness,
@@ -1464,6 +1518,7 @@ fn layout_fraction(
             Slot::Denominator,
         );
         out.items.push(Item::Rule(RuleItem {
+            color: None,
             x: 0.0,
             y: -(axis + thickness / 2.0),
             width,
@@ -1572,6 +1627,7 @@ fn layout_radical(
     x += surd_advance;
     let body_width = body.width;
     out.items.push(Item::Rule(RuleItem {
+        color: None,
         x,
         y: bar_top,
         width: body_width,
@@ -1713,6 +1769,7 @@ fn layout_table(
                 let left = boundary_start + (gap - group) / 2.0;
                 for index in 0..count {
                     out.items.push(Item::Rule(RuleItem {
+                        color: None,
                         x: left + rule_thickness * f32::from(index),
                         y: -out.ascent,
                         width: rule_thickness,
@@ -1786,6 +1843,7 @@ fn emit_stretched(
         Stretched::Glyph(glyph) => {
             if let Some(ink) = cx.font.ink(*glyph) {
                 items.push(Item::Glyph(GlyphItem {
+                    color: None,
                     glyph: *glyph,
                     x,
                     baseline: top + ink.top * em,
@@ -1798,6 +1856,7 @@ fn emit_stretched(
             for (glyph, offset) in parts {
                 if let Some(ink) = cx.font.ink(*glyph) {
                     items.push(Item::Glyph(GlyphItem {
+                        color: None,
                         glyph: *glyph,
                         x,
                         baseline: bottom - offset * em + ink.bottom * em,
@@ -1841,6 +1900,7 @@ fn emit_stretched_horizontal(
 ) {
     match stretched {
         Stretched::Glyph(glyph) => items.push(Item::Glyph(GlyphItem {
+            color: None,
             glyph: *glyph,
             x,
             baseline,
@@ -1849,6 +1909,7 @@ fn emit_stretched_horizontal(
         Stretched::Assembly { parts, .. } => {
             for (glyph, offset) in parts {
                 items.push(Item::Glyph(GlyphItem {
+                    color: None,
                     glyph: *glyph,
                     x: x + offset * em,
                     baseline,

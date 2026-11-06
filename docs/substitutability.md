@@ -112,7 +112,7 @@ stretch and spacing, not a replacement target.
 | Environments (`equation`, `gather`, `smallmatrix`, matrix stars, `array`, `alignat`) | real documents | supported | implement; remaining environments land with their parser, writer and layout together |
 | `\multicolumn` | spanning cells | needs a cell-span field | implement only when a host document needs it; a table with spans cannot silently degrade to equal cells |
 | `CD` | commutative diagrams | not modelled | do not implement; rare, and its grid is not a table |
-| Colours, `\color`/`\textcolor` | coloured documents | not modelled | implement in 4.7; colour belongs on display items, so it must be designed with the style wrapper rather than patched per node |
+| Colours, `\color`/`\textcolor` | coloured documents | supported | display items carry the colour; a `\color` declaration shares the style-switch scope |
 | Style/class wrappers (`\displaystyle`, `\mathop`, the eight `\math*` classes, `\mathchoice`, `\mathstrut`) | custom operators and style control | supported | `\mathop{…}\limits` is the only way to declare a custom operator |
 | Top-level `\\`, `\newline`, `\par` | multi-line formulas | not modelled | defer until a host document requires it; KaTeX itself accepts them only in specific contexts `[unverified]` |
 | Long-tail symbols (~420) | amsmath relations/arrows | table entries, pending | implement in batches driven by real documents, not by the probe list alone |

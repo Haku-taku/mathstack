@@ -147,6 +147,49 @@ command's spelling is recorded, so a document writes `\mathstrut` back;
 canonical output without spellings prints `\vphantom{(}`. The caret cannot
 enter the body, as with any `\phantom`.
 
+## Color
+
+`Color { color, body }` wraps a body. `\textcolor` reads its color argument and
+body directly; `\color` is a declaration, so it shares the scope rule of a
+style switch. The pending declarations form a stack that closes latest-first:
+a later declaration nests inside an earlier one, which keeps both scopes alive
+to the end of the group. `\color{red}a\textstyle b` therefore stays red while
+the later style governs `b` alone, and a later `\color` nests inside an
+earlier one. Closing order also preserves source order, so
+`\displaystyle\color{red}a` and `\color{red}\displaystyle a` keep their
+different nestings; both render the same because an inner style overrides an
+outer one. The preceding version closed a style switch before starting the next
+(they were siblings); that cannot represent a color that spans the boundary, so
+the switch now nests and the scope test pins that shape.
+
+`Color` is straight sRGB with an alpha byte. The parser accepts the 23 common
+CSS/dvips names and `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`. An unknown name or
+a malformed hex value is a diagnostic and the wrapper keeps black, so the tree
+stays editable; the diagnostic is what surfaces the error. Canonical output
+writes a table name when one matches the value, else lowercase hex, with alpha
+only when it is not opaque. KaTeX passes any alphabetic CSS keyword through to
+the renderer, so names outside this table (for example `rebeccapurple`) are a
+deliberate divergence: storing RGB keeps layout independent of CSS. Extending
+the table is additive.
+
+Display items carry `Option<Color>`. Layout does not thread a color parameter:
+`layout_color` lays its body out, then walks the finished box tree and fills
+every item that is still uncolored. An inner `\textcolor` has already claimed
+its items, so it wins over an outer declaration; rules and lines are items of
+the same boxes, which is why a fraction bar or radical is colored by the same
+walk. `math-svg` writes `fill`/`stroke` per item and leaves the group's black
+default for uncolored items, so the demo, which paints through `math-svg`,
+needs no separate color path.
+
+`Document::to_latex` keeps a `\color` declaration as `\color{name}` through a
+spelling that matches the node's color. `\textcolor` has no spelling because
+its canonical form already is the braced command. Canonical output writes every
+color as `\textcolor{…}{…}`; a declaration over a single item keeps that item
+as its body, so the braced form re-parses to the same tree. The wrapper counts
+as a group for atom spacing (one element keeps its class, more count as Ord),
+the same approximation the style switch makes; KaTeX's fragment behavior for a
+colored multi-atom group is not reproduced.
+
 ## Decorated operators and `\displaylimits`
 
 `\varlimsup`, `\varliminf`, `\varinjlim` and `\varprojlim` are amsmath's
@@ -310,6 +353,19 @@ or brace glyph.
   the written form; swapping two branches in the parser fails it.
 - `mathstrut_is_a_vertical_paren_phantom` pins the node shape, the retained
   spelling and the canonical `\vphantom{(}`; dropping either fails it.
+- `color_reaches_nested_glyphs_and_rules` pins that an inner color keeps its
+  glyph while an outer one reaches a fraction's bar; overwriting every item in
+  the tint walk fails it.
+- `color_declarations_scope_to_the_group_and_nest` pins the declaration body
+  covering the following siblings and a `\textcolor` nested inside it;
+  dropping the declaration spelling fails it.
+- `color_and_style_switches_keep_their_source_order` pins both orderings of
+  `\color` and `\displaystyle`; closing declarations oldest-first fails it.
+- `textcolor_and_color_write_back_their_own_forms` pins the two written forms,
+  the canonical re-parse, hex output and the unknown-name diagnostic.
+- The `math-svg` `constructs` example rendered a red/blue/green formula whose
+  SVG parses as XML; glyphs carry the expected `fill` and both rules inside the
+  blue scope carry it too.
 - `hspace_resolves_em_ex_and_mu_units` pins the three unit conversions and a
   negative length; changing the `mu` scale makes it fail.
 - `cancel_draws_one_diagonal_per_direction` pins the single-line and both-line
@@ -360,6 +416,13 @@ edits, `Origin::Macro` and the `Composition` node are in
   and nothing the writer could print back. The switch is a wrapper with a body
   slot, which is what KaTeX's `styling` node does; the scope test fails if the
   wrapper boundary moves.
+- **A style switch could not stay a sibling of the next one.** Colors exposed
+  the old rule: closing the previous switch when a new one starts loses scope
+  for a `\color` that spans the boundary. Declarations are now a stack closed
+  latest-first, so each keeps its scope to the group end and a later one nests
+  inside. `style_switch_scopes_to_the_end_of_its_group` and
+  `color_and_style_switches_keep_their_source_order` pin the nesting and the
+  source order.
 - **Following KaTeX's `\mathop` flag would put its limits at the side.** KaTeX
   0.18.9 marks `\mathop` with `limits: false`, so its scripts stay beside even
   in display style. TeX makes every Op atom `\displaylimits` by default, and

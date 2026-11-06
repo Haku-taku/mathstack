@@ -4,6 +4,7 @@
 //! round-trips structurally rather than byte for byte. A barless fraction is
 //! written with `\atop`, the infix form that parses back without a rule.
 
+use crate::colors;
 use crate::spellings::Spellings;
 use crate::symbols;
 use math_core::{
@@ -365,6 +366,21 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             // enclosing row's, not its own.
             write(model, *body, Context::Argument, out);
         }
+        NodeKind::Color { color, body } => match out.spelling(model, id) {
+            Some(text) => {
+                out.push_token(&text);
+                // A declaration's body is the rest of the group, so its braces
+                // are the enclosing row's, not its own.
+                write(model, *body, Context::Argument, out);
+            }
+            None => {
+                push_command(out, "textcolor");
+                out.push('{');
+                out.push_str(&colors::write(*color));
+                out.push('}');
+                write_argument(model, *body, out);
+            }
+        },
         NodeKind::Class {
             class,
             body,
