@@ -6,8 +6,8 @@ use crate::lexer::{Token, TokenKind};
 use crate::spellings::{Spelling, Spellings};
 use crate::symbols;
 use math_core::{
-    Alignment, Atom, Diagnostic, FractionRule, Length, LengthUnit, Limits, Model, ModelBuilder,
-    NodeId, NodeKind, Origin, PhantomKind, Size, SpaceKind, Span, Style, Variant,
+    Alignment, Atom, ColumnSpacing, Diagnostic, FractionRule, Length, LengthUnit, Limits, Model,
+    ModelBuilder, NodeId, NodeKind, Origin, PhantomKind, Size, SpaceKind, Span, Style, Variant,
 };
 
 /// LaTeX nesting a formula can plausibly use; deeper input is skipped rather
@@ -998,13 +998,26 @@ impl Parser<'_> {
             return content;
         }
 
-        let column_alignment = if environment.optional_alignment {
-            self.parse_column_alignment()
-        } else {
-            None
-        };
+        let mut column_alignment = None;
+        let mut column_spec = None;
+        let mut pair_count = None;
+        match environment.argument {
+            EnvironmentArgument::None => {}
+            EnvironmentArgument::OptionalAlignment => {
+                column_alignment = self.parse_column_alignment();
+            }
+            EnvironmentArgument::Columns => {
+                column_spec = Some(self.parse_column_spec(&name, span));
+            }
+            EnvironmentArgument::Pairs => pair_count = Some(self.parse_pair_count(&name, span)),
+        }
+        let declared = column_spec
+            .as_ref()
+            .map(|spec| spec.alignment.len())
+            .or_else(|| pair_count.map(|pairs| pairs * 2));
         let mut cells: Vec<Vec<NodeId>> = Vec::new();
         let mut columns = 0;
+        let mut overflow = None;
         let end_span;
         loop {
             if self.at_environment_end() {
@@ -1033,6 +1046,12 @@ impl Parser<'_> {
                 }
                 break;
             }
+            if let Some(declared) = declared
+                && declared > 0
+                && row.len() > declared
+            {
+                overflow.get_or_insert(self.span_of(row[declared]));
+            }
             let empty_row = row.len() == 1
                 && matches!(self.model.kind(row[0]), NodeKind::Row(children) if children.is_empty());
             columns = columns.max(row.len());
@@ -1059,11 +1078,15 @@ impl Parser<'_> {
                 continue;
             }
         }
+        if let Some(span) = overflow {
+            self.error(span, format!("more cells than `{name}` declares"));
+        }
 
-        columns = columns.max(1);
-        let alignment = match environment.alignment {
+        columns = columns.max(declared.unwrap_or(0)).max(1);
+        let mut alignment = match environment.alignment {
             EnvironmentAlignment::Cases => vec![Alignment::Left; columns],
-            // `aligned` and `split` alternate a right column and a left one.
+            // `aligned`, `split` and `alignat` alternate a right column and a
+            // left one.
             EnvironmentAlignment::Aligned => (0..columns)
                 .map(|column| {
                     if column % 2 == 0 {
@@ -1078,13 +1101,32 @@ impl Parser<'_> {
             EnvironmentAlignment::Columns => {
                 column_alignment.map_or_else(Vec::new, |alignment| vec![alignment; columns])
             }
+            EnvironmentAlignment::Specified => column_spec
+                .as_ref()
+                .map_or_else(Vec::new, |spec| spec.alignment.clone()),
         };
+        if matches!(environment.alignment, EnvironmentAlignment::Specified) {
+            // A row wider than the declared spec keeps its content; the extra
+            // columns fall back to the default alignment.
+            alignment.resize(columns, Alignment::Center);
+        }
+        let column_rules = column_spec
+            .map(|mut spec| {
+                spec.rules.resize(columns + 1, 0);
+                spec.rules
+            })
+            .filter(|rules| rules.iter().any(|count| *count > 0))
+            .unwrap_or_default();
         let table_span = Span::new(span.start, end_span.end.max(span.end));
         let table = self.build_table(
             cells,
-            columns,
-            alignment,
-            environment.cell_style,
+            TableShape {
+                columns,
+                alignment,
+                cell_style: environment.cell_style,
+                column_rules,
+                column_spacing: environment.column_spacing,
+            },
             table_span,
             end_span.start,
         );
@@ -1168,17 +1210,85 @@ impl Parser<'_> {
         alignment
     }
 
-    /// Pads rows to `columns` and wraps them in a table. `tail` is where the
-    /// padding cells point when nothing was typed.
+    /// The `{l|c|r}` argument of `array`: one alignment per column and the
+    /// vertical rules at the boundaries between them.
+    fn parse_column_spec(&mut self, name: &str, span: Span) -> ColumnSpec {
+        let mut spec = ColumnSpec {
+            alignment: Vec::new(),
+            rules: vec![0],
+        };
+        let command = format!("\\begin{{{name}}}");
+        let TextArgument::Text(text, argument_span) = self.text_argument(&command, span) else {
+            return spec;
+        };
+        let mut reported = false;
+        for symbol in text.chars() {
+            match symbol {
+                'l' | 'c' | 'r' => {
+                    spec.alignment.push(match symbol {
+                        'l' => Alignment::Left,
+                        'r' => Alignment::Right,
+                        _ => Alignment::Center,
+                    });
+                    spec.rules.push(0);
+                }
+                '|' => {
+                    if let Some(boundary) = spec.rules.last_mut() {
+                        *boundary += 1;
+                    }
+                }
+                symbol if symbol.is_whitespace() => {}
+                _ => {
+                    if !reported {
+                        self.error(
+                            argument_span,
+                            format!("unsupported column specifier `{symbol}`"),
+                        );
+                        reported = true;
+                    }
+                }
+            }
+        }
+        if spec.alignment.is_empty() {
+            self.error(
+                argument_span,
+                "expected `l`, `c` or `r` in the column specification",
+            );
+        }
+        spec
+    }
+
+    /// `alignat`'s mandatory `{n}`: how many right/left column pairs exist.
+    fn parse_pair_count(&mut self, name: &str, span: Span) -> usize {
+        let command = format!("\\begin{{{name}}}");
+        let TextArgument::Text(text, argument_span) = self.text_argument(&command, span) else {
+            return 0;
+        };
+        match text.trim().parse::<usize>() {
+            Ok(count) if count > 0 => count,
+            _ => {
+                self.error(argument_span, "expected a positive column-pair count");
+                0
+            }
+        }
+    }
+
+    /// Pads rows to the shape's column count and wraps them in a table. `tail`
+    /// is where the padding cells point when nothing was typed.
     fn build_table(
         &mut self,
         cells: Vec<Vec<NodeId>>,
-        columns: usize,
-        alignment: Vec<Alignment>,
-        cell_style: Style,
+        shape: TableShape,
         table_span: Span,
         tail: usize,
     ) -> NodeId {
+        let TableShape {
+            columns,
+            alignment,
+            cell_style,
+            column_rules,
+            column_spacing,
+        } = shape;
         let pad_span = Span::empty(tail);
         let mut rows = Vec::with_capacity(cells.len());
         for mut row in cells {
@@ -1194,7 +1304,9 @@ impl Parser<'_> {
                 rows,
                 columns,
                 alignment,
-                cell_style: Some(cell_style),
+                cell_style,
+                column_rules,
+                column_spacing,
             },
             table_span,
         )
@@ -1267,7 +1379,18 @@ impl Parser<'_> {
 
         let columns = columns.max(1);
         let table_span = Span::new(span.start, end.max(span.end));
-        let table = self.build_table(cells, columns, Vec::new(), Style::SCRIPT, table_span, end);
+        let table = self.build_table(
+            cells,
+            TableShape {
+                columns,
+                alignment: Vec::new(),
+                cell_style: Some(Style::SCRIPT),
+                column_rules: Vec::new(),
+                column_spacing: ColumnSpacing::Spaced,
+            },
+            table_span,
+            end,
+        );
         self.spellings.set_environment(table, "substack".to_owned());
         table
     }
@@ -1526,95 +1649,170 @@ impl Parser<'_> {
 struct Environment {
     delimiters: Option<(Option<char>, Option<char>)>,
     alignment: EnvironmentAlignment,
-    /// `matrix*` and its fenced variants take a `[l|c|r]` argument.
-    optional_alignment: bool,
+    argument: EnvironmentArgument,
     /// `equation` holds one formula instead of a grid.
     formula: bool,
     /// The style the environment sets its cells in, as KaTeX's `dCellStyle`
-    /// and the array/matrix definitions do.
-    cell_style: Style,
+    /// and the array/matrix definitions do; `None` inherits the table's, as
+    /// `array` does.
+    cell_style: Option<Style>,
+    column_spacing: ColumnSpacing,
+}
+
+/// The argument an environment takes after its name.
+#[derive(Clone, Copy)]
+enum EnvironmentArgument {
+    None,
+    /// `matrix*`'s optional `[l|c|r]`, which applies to every column.
+    OptionalAlignment,
+    /// `array`'s mandatory `{l|c|r}` column specification.
+    Columns,
+    /// `alignat`'s mandatory `{n}` column-pair count.
+    Pairs,
 }
 
 #[derive(Clone, Copy)]
 enum EnvironmentAlignment {
     /// A matrix: centered unless the starred form names a column alignment.
     Columns,
+    /// One alignment per column, from the environment's column specification.
+    Specified,
     /// Both columns left-aligned (`cases` and its variants).
     Cases,
-    /// A right column followed by a left one (`aligned`, `split`).
+    /// A right column followed by a left one (`aligned`, `split`, `alignat`).
     Aligned,
     /// One centered column (`gather`, `gathered`).
     Center,
 }
 
+/// The alignment and boundary rules an `array` preamble spells.
+struct ColumnSpec {
+    alignment: Vec<Alignment>,
+    /// One count per boundary, left to right; one more entry than `alignment`.
+    rules: Vec<u8>,
+}
+
+/// The table shape an environment's arguments and rows settle on.
+struct TableShape {
+    columns: usize,
+    alignment: Vec<Alignment>,
+    cell_style: Option<Style>,
+    column_rules: Vec<u8>,
+    column_spacing: ColumnSpacing,
+}
+
 impl Environment {
     fn lookup(name: &str) -> Option<Self> {
-        let grid = |delimiters, alignment, optional_alignment, cell_style| Environment {
+        let grid = |delimiters, alignment, argument, cell_style, column_spacing| Environment {
             delimiters,
             alignment,
-            optional_alignment,
+            argument,
             formula: false,
             cell_style,
+            column_spacing,
         };
         // amsmath sets matrix and cases cells in text style.
-        let matrix = |delimiters, optional_alignment| {
+        let matrix = |delimiters, argument| {
             grid(
                 delimiters,
                 EnvironmentAlignment::Columns,
-                optional_alignment,
-                Style::TEXT,
+                argument,
+                Some(Style::TEXT),
+                ColumnSpacing::Spaced,
+            )
+        };
+        let cases = |delimiters, cell_style| {
+            grid(
+                delimiters,
+                EnvironmentAlignment::Cases,
+                EnvironmentArgument::None,
+                Some(cell_style),
+                ColumnSpacing::Spaced,
             )
         };
         Some(match name {
-            "matrix" => matrix(None, false),
-            "matrix*" => matrix(None, true),
-            "pmatrix" => matrix(Some((Some('('), Some(')'))), false),
-            "pmatrix*" => matrix(Some((Some('('), Some(')'))), true),
-            "bmatrix" => matrix(Some((Some('['), Some(']'))), false),
-            "bmatrix*" => matrix(Some((Some('['), Some(']'))), true),
-            "Bmatrix" => matrix(Some((Some('{'), Some('}'))), false),
-            "Bmatrix*" => matrix(Some((Some('{'), Some('}'))), true),
-            "vmatrix" => matrix(Some((Some('|'), Some('|'))), false),
-            "vmatrix*" => matrix(Some((Some('|'), Some('|'))), true),
-            "Vmatrix" => matrix(Some((Some('‖'), Some('‖'))), false),
-            "Vmatrix*" => matrix(Some((Some('‖'), Some('‖'))), true),
-            "smallmatrix" => grid(None, EnvironmentAlignment::Columns, false, Style::SCRIPT),
-            "cases" => grid(
-                Some((Some('{'), None)),
-                EnvironmentAlignment::Cases,
-                false,
-                Style::TEXT,
+            "matrix" => matrix(None, EnvironmentArgument::None),
+            "matrix*" => matrix(None, EnvironmentArgument::OptionalAlignment),
+            "pmatrix" => matrix(Some((Some('('), Some(')'))), EnvironmentArgument::None),
+            "pmatrix*" => matrix(
+                Some((Some('('), Some(')'))),
+                EnvironmentArgument::OptionalAlignment,
             ),
-            "dcases" => grid(
-                Some((Some('{'), None)),
-                EnvironmentAlignment::Cases,
-                false,
-                Style::DISPLAY,
+            "bmatrix" => matrix(Some((Some('['), Some(']'))), EnvironmentArgument::None),
+            "bmatrix*" => matrix(
+                Some((Some('['), Some(']'))),
+                EnvironmentArgument::OptionalAlignment,
             ),
-            "rcases" => grid(
-                Some((None, Some('}'))),
-                EnvironmentAlignment::Cases,
-                false,
-                Style::TEXT,
-            ),
-            "drcases" => grid(
+            "Bmatrix" => matrix(Some((Some('{'), Some('}'))), EnvironmentArgument::None),
+            "Bmatrix*" => matrix(
                 Some((Some('{'), Some('}'))),
-                EnvironmentAlignment::Cases,
-                false,
-                Style::DISPLAY,
+                EnvironmentArgument::OptionalAlignment,
             ),
-            "aligned" | "align" | "align*" | "split" => {
-                grid(None, EnvironmentAlignment::Aligned, false, Style::DISPLAY)
-            }
-            "gather" | "gather*" | "gathered" => {
-                grid(None, EnvironmentAlignment::Center, false, Style::DISPLAY)
-            }
+            "vmatrix" => matrix(Some((Some('|'), Some('|'))), EnvironmentArgument::None),
+            "vmatrix*" => matrix(
+                Some((Some('|'), Some('|'))),
+                EnvironmentArgument::OptionalAlignment,
+            ),
+            "Vmatrix" => matrix(Some((Some('‖'), Some('‖'))), EnvironmentArgument::None),
+            "Vmatrix*" => matrix(
+                Some((Some('‖'), Some('‖'))),
+                EnvironmentArgument::OptionalAlignment,
+            ),
+            "smallmatrix" => grid(
+                None,
+                EnvironmentAlignment::Columns,
+                EnvironmentArgument::None,
+                Some(Style::SCRIPT),
+                ColumnSpacing::Spaced,
+            ),
+            // `array` inherits the surrounding style, unlike the matrix family.
+            "array" => grid(
+                None,
+                EnvironmentAlignment::Specified,
+                EnvironmentArgument::Columns,
+                None,
+                ColumnSpacing::Spaced,
+            ),
+            "subarray" => grid(
+                None,
+                EnvironmentAlignment::Specified,
+                EnvironmentArgument::Columns,
+                Some(Style::SCRIPT),
+                ColumnSpacing::Spaced,
+            ),
+            "cases" => cases(Some((Some('{'), None)), Style::TEXT),
+            "dcases" => cases(Some((Some('{'), None)), Style::DISPLAY),
+            "rcases" => cases(Some((None, Some('}'))), Style::TEXT),
+            "drcases" => cases(Some((Some('{'), Some('}'))), Style::DISPLAY),
+            "aligned" | "align" | "align*" | "split" => grid(
+                None,
+                EnvironmentAlignment::Aligned,
+                EnvironmentArgument::None,
+                Some(Style::DISPLAY),
+                ColumnSpacing::Spaced,
+            ),
+            // `alignat` sets its columns flush; the source supplies any space.
+            "alignat" | "alignat*" | "alignedat" => grid(
+                None,
+                EnvironmentAlignment::Aligned,
+                EnvironmentArgument::Pairs,
+                Some(Style::DISPLAY),
+                ColumnSpacing::Flush,
+            ),
+            "gather" | "gather*" | "gathered" => grid(
+                None,
+                EnvironmentAlignment::Center,
+                EnvironmentArgument::None,
+                Some(Style::DISPLAY),
+                ColumnSpacing::Spaced,
+            ),
             "equation" | "equation*" => Environment {
                 delimiters: None,
                 alignment: EnvironmentAlignment::Center,
-                optional_alignment: false,
+                argument: EnvironmentArgument::None,
                 formula: true,
-                cell_style: Style::TEXT,
+                cell_style: Some(Style::TEXT),
+                column_spacing: ColumnSpacing::Spaced,
             },
             _ => return None,
         })

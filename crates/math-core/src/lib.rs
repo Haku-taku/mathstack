@@ -25,8 +25,9 @@ pub use layout::{
     Diagnostic, layout, layout_with_geometry, layout_with_shaper, layout_with_shaper_and_geometry,
 };
 pub use node::{
-    Alignment, ChildSlot, DelimiterSize, EditError, FractionRule, Length, LengthUnit, Limits,
-    Model, ModelBuilder, Node, NodeId, NodeKind, Origin, PhantomKind, Slot, SpaceKind,
+    Alignment, ChildSlot, ColumnSpacing, DelimiterSize, EditError, FractionRule, Length,
+    LengthUnit, Limits, Model, ModelBuilder, Node, NodeId, NodeKind, Origin, PhantomKind, Slot,
+    SpaceKind,
 };
 pub use span::Span;
 pub use style::{Size, Style};

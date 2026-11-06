@@ -191,6 +191,16 @@ pub enum Alignment {
     Right,
 }
 
+/// How much space separates a table's columns.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ColumnSpacing {
+    /// Half an em at every boundary, the matrix default.
+    #[default]
+    Spaced,
+    /// No space beyond the cells: `alignat` leaves separation to the source.
+    Flush,
+}
+
 /// One child of a node, with the slot it occupies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChildSlot {
@@ -321,6 +331,11 @@ pub enum NodeKind {
         alignment: Vec<Alignment>,
         /// The style the cells are set in; `None` inherits the table's.
         cell_style: Option<Style>,
+        /// Vertical rules at the column boundaries, left to right: one count
+        /// per boundary, so `columns + 1` entries. Empty when there are none.
+        column_rules: Vec<u8>,
+        /// How adjacent columns are separated.
+        column_spacing: ColumnSpacing,
     },
     /// One table row; its children are cells (each a row of its own).
     TableRow {
@@ -607,11 +622,15 @@ impl NodeKind {
                 columns,
                 alignment,
                 cell_style,
+                column_rules,
+                column_spacing,
             } => NodeKind::Table {
                 rows: rows.iter().map(|id| map(*id)).collect(),
                 columns: *columns,
                 alignment: alignment.clone(),
                 cell_style: *cell_style,
+                column_rules: column_rules.clone(),
+                column_spacing: *column_spacing,
             },
             NodeKind::TableRow { cells } => NodeKind::TableRow {
                 cells: cells.iter().map(|id| map(*id)).collect(),
@@ -1383,6 +1402,8 @@ impl ModelBuilder {
                 columns,
                 alignment,
                 cell_style: None,
+                column_rules: Vec::new(),
+                column_spacing: ColumnSpacing::Spaced,
             },
             Span::default(),
         )

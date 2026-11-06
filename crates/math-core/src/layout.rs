@@ -14,8 +14,8 @@ use crate::display::{GlyphItem, Item, Layout, LineItem, RuleItem};
 use crate::font::{GlyphId, MathFont, Stretched};
 use crate::geometry::Geometry;
 use crate::node::{
-    Alignment, DelimiterSize, FractionRule, Length, Model, NodeId, NodeKind, PhantomKind, Slot,
-    SpaceKind,
+    Alignment, ColumnSpacing, DelimiterSize, FractionRule, Length, Model, NodeId, NodeKind,
+    PhantomKind, Slot, SpaceKind,
 };
 use crate::span::Span;
 use crate::style::Style;
@@ -318,6 +318,8 @@ fn layout_kind(
             columns,
             alignment,
             cell_style,
+            column_rules,
+            column_spacing,
         } => layout_table(
             cx,
             TableSpec {
@@ -325,6 +327,8 @@ fn layout_kind(
                 columns: *columns,
                 alignment,
                 cell_style: *cell_style,
+                column_rules,
+                column_spacing: *column_spacing,
             },
             size,
             style,
@@ -1482,7 +1486,12 @@ struct TableSpec<'a> {
     columns: usize,
     alignment: &'a [Alignment],
     cell_style: Option<Style>,
+    column_rules: &'a [u8],
+    column_spacing: ColumnSpacing,
 }
+
+/// `\arrayrulewidth`, which LaTeX's `array` sets to 0.4pt at 10pt.
+const ARRAY_RULE_EM: f32 = 0.04;
 
 /// A matrix-style table: cells share column widths and row baselines.
 fn layout_table(
@@ -1497,11 +1506,27 @@ fn layout_table(
         columns,
         alignment,
         cell_style,
+        column_rules,
+        column_spacing,
     } = table;
     let em = style.em(cx.font, size);
-    let column_gap = 0.5 * em;
+    let base_gap = match column_spacing {
+        ColumnSpacing::Spaced => 0.5 * em,
+        ColumnSpacing::Flush => 0.0,
+    };
+    let rule_thickness = ARRAY_RULE_EM * em;
     let row_gap = 0.5 * em;
     let cell_style = cell_style.unwrap_or(style);
+
+    // A boundary between columns keeps its gap; one that carries rules widens
+    // by their thickness so the columns' own distance is unchanged. Outer
+    // boundaries have no gap unless a rule needs padding beside it.
+    let boundary_gap = |boundary: usize| {
+        let count = column_rules.get(boundary).copied().unwrap_or(0);
+        let interior = boundary > 0 && boundary < columns;
+        let base = if interior || count > 0 { base_gap } else { 0.0 };
+        base + rule_thickness * f32::from(count)
+    };
 
     // Lay every cell out first; column widths need the whole table.
     let mut grid: Vec<(NodeId, Vec<MathBox>)> = Vec::new();
@@ -1530,7 +1555,13 @@ fn layout_table(
             widths[column] = widths[column].max(cell.width);
         }
     }
-    let width = widths.iter().sum::<f32>() + column_gap * columns.saturating_sub(1) as f32;
+    let mut starts = Vec::with_capacity(columns);
+    let mut cursor = boundary_gap(0);
+    for (column, width) in widths.iter().enumerate() {
+        starts.push(cursor);
+        cursor += width + boundary_gap(column + 1);
+    }
+    let width = cursor;
 
     let mut out = MathBox {
         width,
@@ -1553,7 +1584,6 @@ fn layout_table(
             ..MathBox::empty()
         };
         row.id = Some(row_id);
-        let mut x = 0.0;
         for (column, cell) in cells.into_iter().enumerate() {
             let align = alignment.get(column).copied().unwrap_or_default();
             let offset = match align {
@@ -1561,13 +1591,38 @@ fn layout_table(
                 Alignment::Center => (widths[column] - cell.width) / 2.0,
                 Alignment::Right => widths[column] - cell.width,
             };
-            row.push_child(cell, x + offset, 0.0, Slot::Cell);
-            x += widths[column] + column_gap;
+            row.push_child(cell, starts[column] + offset, 0.0, Slot::Cell);
         }
         out.ascent = out.ascent.max(ascent - baseline);
         out.descent = out.descent.max(descent + baseline);
         // Offsets are y-down, so a later row sits at a positive baseline.
         out.push_child(row, 0.0, baseline, Slot::Row);
+    }
+
+    // Rules span the table's height, which only the rows above settle.
+    let height = out.ascent + out.descent;
+    if height > 0.0 {
+        let mut boundary_start = 0.0;
+        for boundary in 0..=columns {
+            let count = column_rules.get(boundary).copied().unwrap_or(0);
+            let gap = boundary_gap(boundary);
+            if count > 0 {
+                let group = rule_thickness * f32::from(count);
+                let left = boundary_start + (gap - group) / 2.0;
+                for index in 0..count {
+                    out.items.push(Item::Rule(RuleItem {
+                        x: left + rule_thickness * f32::from(index),
+                        y: -out.ascent,
+                        width: rule_thickness,
+                        height,
+                    }));
+                }
+            }
+            boundary_start += gap;
+            if let Some(width) = widths.get(boundary) {
+                boundary_start += width;
+            }
+        }
     }
     out
 }

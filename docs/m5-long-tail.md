@@ -71,6 +71,33 @@ style. The writer infers `smallmatrix` from script cells and picks
 `cases`/`dcases`/`rcases`/`drcases` from the fence and the cell style, while a
 recorded environment name still wins over the inferred one.
 
+`array` and `subarray` take a mandatory `{l|c|r}` column specification, so the
+table gained two fields: `column_rules` counts the vertical rules at each
+column boundary (one entry per boundary, empty when there are none) and
+`column_spacing` says whether adjacent columns keep the half-em gap or sit
+flush. The parser reads the preamble as text and interprets it: `l`, `c` and
+`r` append a column, `|` adds a rule to the boundary reached so far, and any
+other specifier is one diagnostic. `array` inherits the surrounding style,
+which is what `cell_style: None` now means for a parsed table; `subarray` sets
+its cells in script style. Layout widens a boundary that carries rules by their
+thickness (0.04 em, LaTeX's `\arrayrulewidth`) and centres the rules in the
+widened gap, so the columns keep their distance. A boundary with no rule and no
+inner side adds no space, which keeps a matrix's width unchanged. The rules span
+the table's ascent and descent and are emitted as `Rule` items.
+
+`alignat`, `alignat*` and `alignedat` take a mandatory pair count `{n}`. The
+parser declares `2n` columns aligned right/left in pairs and sets their spacing
+flush; the source's own `\,` or `\quad` is then the only separation, unlike
+`aligned`, whose columns keep a gap. That flush flag is also how the writer
+tells the two apart, since their alignments are identical.
+
+The writer rebuilds an environment's argument from the model rather than
+keeping the source text, so `array{|c|c|}` and `alignat{2}` survive a round
+trip. Canonical output with no recorded name spells `array` for a
+style-inheriting table, `subarray` for a script table that carries an explicit
+alignment (`smallmatrix` has none to carry) and `alignedat` for a flush display
+table whose columns alternate.
+
 ## Lengths and `\hspace`
 
 `\hspace` needs a width in a unit, so the model gained:
@@ -152,8 +179,18 @@ or brace glyph.
 - Round-trip sources gained `\stackrel`, `\substack` with two rows, `\cfrac`,
   both modular commands, an `aligned` block, four `\genfrac` spellings (zero,
   custom, script style, delimiter pair), both arrows with and without an under
-  label, both braces, `\cancel`/`\bcancel`/`\xcancel`, and three `\hspace`
-  lengths.
+  label, both braces, `\cancel`/`\bcancel`/`\xcancel`, three `\hspace` lengths,
+  `array` with a mixed preamble, `array{|c|c|}`, a rules-free `array`,
+  `subarray`, and both `alignat` spellings.
+- `table_boundaries_carry_rules_and_flush_spacing` pins the three rule
+  positions, thickness and full-height span of a `|c|c|`-shaped table, and that
+  flush columns sit at zero gap; ignoring the rule width or the spacing flag
+  fails it.
+- `array_and_alignat_arguments_shape_the_table` pins the preamble mapping
+  (`l|c|r` to alignments and boundary counts), that `array` inherits the cell
+  style, `alignat`'s pair count and flush spacing, and that the writer keeps
+  the name and the column specification; hard-coding a cell style or swapping
+  the spacing fails it.
 - `matrix_environments_build_rows_and_cells` checks that `aligned` yields
   `[Right, Left]`; flipping either entry makes it fail.
 - `hspace_resolves_em_ex_and_mu_units` pins the three unit conversions and a
@@ -178,3 +215,25 @@ or brace glyph.
 Closed. The per-edit budget is in [`m5-budget.md`](m5-budget.md); structural
 edits, `Origin::Macro` and the `Composition` node are in
 [`m5-editing.md`](m5-editing.md).
+
+## Corrections
+
+- **A style-inheriting table was written as a matrix.** Canonical output spelled
+  every table without a cell style `\begin{matrix}`, but a matrix sets its cells
+  in text style, so reading the output back changed the table's style. The
+  writer now spells `array` with a preamble rebuilt from the per-column
+  alignment, since `array` is the environment that inherits. The round-trip
+  corpus entry `\begin{array}{cc}…` fails if the inference goes back.
+- **The table count was all the model could say about columns.** `array` was
+  rejected because its specification had nowhere to live, and a matrix has no
+  place for a vertical rule. `column_rules` stores one count per boundary
+  rather than one flag, because `||` draws two rules with no space between
+  them; layout emits one `Rule` item per count. Dropping the bars from the
+  writer's preamble fails the round-trip corpus, and ignoring the counts in
+  layout fails the rule-geometry test.
+- **`aligned` and `alignedat` had the same shape.** Both parse to alternating
+  right/left display columns, so the writer could not tell them apart; the
+  canonical form wrote `aligned` for both. The distinct spacing (`Spaced` and
+  `Flush`) is now part of the table and selects `alignedat`, which also carries
+  its pair count. `array_and_alignat_arguments_shape_the_table` asserts the
+  canonical name, so dropping the flush flag makes it fail.

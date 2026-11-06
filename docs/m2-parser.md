@@ -135,11 +135,10 @@ fraction as `\atop` between its parts, so the rule-less form round-trips.
 
 Macros, accents, font commands, `\text`, spacing commands, `\middle`, the
 `\big` family, `\atop` and `\operatorname` are covered in
-[`m3-macros-text.md`](m3-macros-text.md). Still open: matrices and aligned
-environments, the host `TextShaper`, and the twelve deferred constructs that
-document lists (stretchy arrows and braces, stacks, continued fractions,
-modular notation, `\cancel`, `\hspace`). Unknown commands become `Error`
-nodes, so the rest of a formula still parses and edits.
+[`m3-macros-text.md`](m3-macros-text.md). Tables and environments are in
+[`m5-tables.md`](m5-tables.md) and [`m5-long-tail.md`](m5-long-tail.md); the
+host `TextShaper` remains open. Unknown commands become `Error` nodes, so the
+rest of a formula still parses and edits.
 
 ## Verification
 

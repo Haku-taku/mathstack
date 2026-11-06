@@ -296,6 +296,7 @@ env:Vmatrix*
 env:align
 env:align*
 env:aligned
+env:array
 env:bmatrix
 env:bmatrix*
 env:cases
@@ -313,5 +314,6 @@ env:pmatrix*
 env:rcases
 env:smallmatrix
 env:split
+env:subarray
 env:vmatrix
 env:vmatrix*

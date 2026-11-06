@@ -1,8 +1,8 @@
 use math_core::{
-    Alignment, Atom, AtomClass, Constants, DelimiterSize, FractionRule, Gap, GlyphId, InkBounds,
-    Item, Layout, Length, LengthUnit, Limits, MathFont, Model, ModelBuilder, NodeId, NodeKind,
-    PhantomKind, ShapedGlyph, ShapedRun, Size, Stretched, Style, TextShaper, TextStyle, Variant,
-    gap, layout, layout_with_shaper, math_italic, variant_char,
+    Alignment, Atom, AtomClass, ColumnSpacing, Constants, DelimiterSize, FractionRule, Gap,
+    GlyphId, InkBounds, Item, Layout, Length, LengthUnit, Limits, MathFont, Model, ModelBuilder,
+    NodeId, NodeKind, PhantomKind, ShapedGlyph, ShapedRun, Size, Stretched, Style, TextShaper,
+    TextStyle, Variant, gap, layout, layout_with_shaper, math_italic, variant_char,
 };
 
 struct FakeFont;
@@ -1180,4 +1180,63 @@ fn text_layout_uses_the_host_shaper() {
     assert_eq!(fallback.width, 10.0);
     assert_eq!((fallback.ascent, fallback.descent), (6.0, 2.0));
     assert_eq!(fallback.items.len(), 2);
+}
+
+#[test]
+fn table_boundaries_carry_rules_and_flush_spacing() {
+    let build = |rules: Vec<u8>, spacing| {
+        Model::build(|m| {
+            let a = m.symbol('a');
+            let cell_a = m.row(vec![a]);
+            let b = m.symbol('b');
+            let cell_b = m.row(vec![b]);
+            let row = m.table_row(vec![cell_a, cell_b]);
+            m.alloc(
+                NodeKind::Table {
+                    rows: vec![row],
+                    columns: 2,
+                    alignment: Vec::new(),
+                    cell_style: None,
+                    column_rules: rules,
+                    column_spacing: spacing,
+                },
+                math_core::Span::default(),
+            )
+        })
+        .0
+    };
+
+    // A rule widens its boundary by its thickness and sits centred in it, so
+    // the columns keep their distance; the rule spans the table's height.
+    let ruled = measured(&build(vec![1, 1, 1], ColumnSpacing::Spaced), Style::TEXT);
+    assert!(close(ruled.width, 26.2));
+    let rules: Vec<(f32, f32, f32, f32)> = ruled
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Rule(rule) => Some((rule.x, rule.y, rule.width, rule.height)),
+            Item::Glyph(_) | Item::Line(_) => None,
+        })
+        .collect();
+    // The display list is shifted down by the ascent, so the rule starts at 0.
+    let expected = [
+        (2.5, 0.0, 0.4, 8.0),
+        (12.9, 0.0, 0.4, 8.0),
+        (23.3, 0.0, 0.4, 8.0),
+    ];
+    assert_eq!(rules.len(), expected.len());
+    for (rule, expected) in rules.iter().zip(expected) {
+        assert!(
+            close(rule.0, expected.0)
+                && close(rule.1, expected.1)
+                && close(rule.2, expected.2)
+                && close(rule.3, expected.3),
+            "rule {rule:?} differs from {expected:?}"
+        );
+    }
+
+    // `alignat`'s columns are flush: no gap, so the table is the cell widths.
+    let flush = measured(&build(Vec::new(), ColumnSpacing::Flush), Style::TEXT);
+    assert!(close(flush.width, 10.0));
+    assert_eq!(glyphs(&flush), vec![(0.0, 6.0), (5.0, 6.0)]);
 }

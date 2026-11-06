@@ -7,8 +7,8 @@
 use crate::spellings::Spellings;
 use crate::symbols;
 use math_core::{
-    Alignment, Atom, FractionRule, Length, LengthUnit, Limits, Model, NodeId, NodeKind, Origin,
-    Size, Span, Style,
+    Alignment, Atom, ColumnSpacing, FractionRule, Length, LengthUnit, Limits, Model, NodeId,
+    NodeKind, Origin, Size, Span, Style,
 };
 
 /// Where a node sits: a nested row in an item position needs braces to stay a
@@ -407,6 +407,8 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             columns,
             alignment,
             cell_style,
+            column_rules,
+            column_spacing,
             ..
         } => {
             let environment = out.environment(id).map(str::to_owned);
@@ -415,7 +417,13 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             } else {
                 let (name, argument) = match environment.as_deref() {
                     Some(name) => (name, environment_argument(name, model, id)),
-                    None => inferred_environment(*columns, alignment, *cell_style),
+                    None => inferred_environment(
+                        *columns,
+                        alignment,
+                        *cell_style,
+                        column_rules,
+                        *column_spacing,
+                    ),
                 };
                 write_environment_with_arg(model, id, name, argument, out);
             }
@@ -567,13 +575,22 @@ fn write_environment(model: &Model, table: NodeId, name: &str, out: &mut Output<
     let _ = write_environment_with_arg(model, table, name, None, out);
 }
 
+/// The argument an environment takes after its name.
+enum EnvironmentArgument {
+    /// A starred matrix's `[l|c|r]`.
+    Bracket(char),
+    /// A braced argument written as spelled: `array`'s column specification or
+    /// `alignat`'s pair count.
+    Braces(String),
+}
+
 /// Writes `\begin{name}[arg] rows \end{name}` and returns the span of the
 /// rows, which is what a fenced wrapper's body covers.
 fn write_environment_with_arg(
     model: &Model,
     table: NodeId,
     name: &str,
-    argument: Option<char>,
+    argument: Option<EnvironmentArgument>,
     out: &mut Output<'_>,
 ) -> (usize, usize) {
     let NodeKind::Table { rows, .. } = model.kind(table) else {
@@ -584,10 +601,18 @@ fn write_environment_with_arg(
     out.push('{');
     out.push_str(name);
     out.push('}');
-    if let Some(argument) = argument {
-        out.push('[');
-        out.push(argument);
-        out.push(']');
+    match argument {
+        Some(EnvironmentArgument::Bracket(letter)) => {
+            out.push('[');
+            out.push(letter);
+            out.push(']');
+        }
+        Some(EnvironmentArgument::Braces(text)) => {
+            out.push('{');
+            out.push_str(&text);
+            out.push('}');
+        }
+        None => {}
     }
     let body_start = out.text.len();
     for (index, row) in rows.iter().enumerate() {
@@ -615,18 +640,31 @@ fn table_in_body(model: &Model, body: NodeId) -> Option<NodeId> {
     matches!(model.kind(*table), NodeKind::Table { .. }).then_some(*table)
 }
 
-/// A starred matrix's `[l|c|r]`, which the model stores per column.
-fn environment_argument(name: &str, model: &Model, table: NodeId) -> Option<char> {
-    if !name.ends_with('*') {
-        return None;
-    }
+/// The argument an environment name implies, rebuilt from the model.
+fn environment_argument(name: &str, model: &Model, table: NodeId) -> Option<EnvironmentArgument> {
     let NodeKind::Table {
-        columns, alignment, ..
+        columns,
+        alignment,
+        column_rules,
+        ..
     } = model.kind(table)
     else {
         return None;
     };
-    uniform_alignment(*columns, alignment)
+    match name {
+        "array" | "subarray" => Some(EnvironmentArgument::Braces(column_preamble(
+            *columns,
+            alignment,
+            column_rules,
+        ))),
+        "alignat" | "alignat*" | "alignedat" => Some(EnvironmentArgument::Braces(
+            pair_count(*columns).to_string(),
+        )),
+        _ if name.ends_with('*') => {
+            uniform_alignment(*columns, alignment).map(EnvironmentArgument::Bracket)
+        }
+        _ => None,
+    }
 }
 
 /// The one alignment every column shares, when there is one.
@@ -638,11 +676,41 @@ fn uniform_alignment(columns: usize, alignment: &[Alignment]) -> Option<char> {
     if !alignment.iter().all(|align| *align == first) {
         return None;
     }
-    Some(match first {
+    Some(alignment_letter(first))
+}
+
+fn alignment_letter(alignment: Alignment) -> char {
+    match alignment {
         Alignment::Left => 'l',
         Alignment::Center => 'c',
         Alignment::Right => 'r',
-    })
+    }
+}
+
+/// How many `rl` column pairs a table with this many columns declares.
+fn pair_count(columns: usize) -> usize {
+    columns.div_ceil(2)
+}
+
+/// An `array` column specification rebuilt from the model: each boundary's
+/// rules, then the next column's letter.
+fn column_preamble(columns: usize, alignment: &[Alignment], column_rules: &[u8]) -> String {
+    let rules = (column_rules.len() == columns + 1).then_some(column_rules);
+    let mut preamble = String::new();
+    for boundary in 0..=columns {
+        let count = rules
+            .and_then(|rules| rules.get(boundary))
+            .copied()
+            .unwrap_or(0);
+        for _ in 0..count {
+            preamble.push('|');
+        }
+        if boundary < columns {
+            let align = alignment.get(boundary).copied().unwrap_or_default();
+            preamble.push(alignment_letter(align));
+        }
+    }
+    preamble
 }
 
 /// The environment a table's shape implies when no source name survives.
@@ -650,25 +718,49 @@ fn inferred_environment(
     columns: usize,
     alignment: &[Alignment],
     cell_style: Option<Style>,
-) -> (&'static str, Option<char>) {
+    column_rules: &[u8],
+    column_spacing: ColumnSpacing,
+) -> (&'static str, Option<EnvironmentArgument>) {
     match cell_style.map(|style| style.size) {
-        Some(Size::Script | Size::ScriptScript) => ("smallmatrix", None),
+        // A `smallmatrix` has no alignment, so a script table that carries one
+        // stays a subarray.
+        Some(Size::Script | Size::ScriptScript) if alignment.is_empty() => ("smallmatrix", None),
+        Some(Size::Script | Size::ScriptScript) => (
+            "subarray",
+            Some(EnvironmentArgument::Braces(column_preamble(
+                columns,
+                alignment,
+                column_rules,
+            ))),
+        ),
         Some(Size::Display) => {
-            if aligned_columns(columns, alignment) {
-                ("aligned", None)
-            } else {
+            if !aligned_columns(columns, alignment) {
                 ("gathered", None)
+            } else if column_spacing == ColumnSpacing::Flush {
+                let count = pair_count(columns).to_string();
+                ("alignedat", Some(EnvironmentArgument::Braces(count)))
+            } else {
+                ("aligned", None)
             }
         }
-        _ => {
+        Some(Size::Text) => {
             if aligned_columns(columns, alignment) {
                 ("aligned", None)
             } else if let Some(argument) = uniform_alignment(columns, alignment) {
-                ("matrix*", Some(argument))
+                ("matrix*", Some(EnvironmentArgument::Bracket(argument)))
             } else {
                 ("matrix", None)
             }
         }
+        // `None` inherits the surrounding style, which only `array` spells.
+        None => (
+            "array",
+            Some(EnvironmentArgument::Braces(column_preamble(
+                columns,
+                alignment,
+                column_rules,
+            ))),
+        ),
     }
 }
 

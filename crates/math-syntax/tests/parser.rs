@@ -1,6 +1,6 @@
 use math_core::{
-    AtomClass, FractionRule, Limits, Model, NodeId, NodeKind, Origin, SpaceKind, Span, Style,
-    Variant,
+    Alignment, AtomClass, ColumnSpacing, FractionRule, Limits, Model, NodeId, NodeKind, Origin,
+    SpaceKind, Span, Style, Variant,
 };
 use math_syntax::{
     CommandShape, command_shape, command_template, parse, to_latex, to_latex_with_spans,
@@ -163,8 +163,12 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
             columns,
             alignment,
             cell_style,
+            column_rules,
+            column_spacing,
         } => {
-            out.push_str(&format!("Table({columns},{alignment:?},{cell_style:?},"));
+            out.push_str(&format!(
+                "Table({columns},{alignment:?},{cell_style:?},{column_rules:?},{column_spacing:?},"
+            ));
             for row in rows {
                 write_dump(model, *row, out);
                 out.push(',');
@@ -479,6 +483,12 @@ fn writer_round_trips_the_grammar() {
         "\\begin{vmatrix*}[r]a&b\\end{vmatrix*}",
         "\\begin{Vmatrix*}[c]a&b\\end{Vmatrix*}",
         "\\begin{smallmatrix}a&b\\\\c&d\\end{smallmatrix}",
+        "\\begin{array}{l|c|r}a&b&c\\\\d&e&f\\end{array}",
+        "\\begin{array}{|c|c|}a&b\\end{array}",
+        "\\begin{array}{cc}a&b\\end{array}",
+        "\\begin{subarray}{c}i<n\\\\n>0\\end{subarray}",
+        "\\begin{alignat}{2}a&=b&c&=d\\end{alignat}",
+        "\\begin{alignedat}{2}a&=b&c&=d\\end{alignedat}",
         "\\stackrel{!}{=}",
         "\\substack{0<i<n\\\\i\\ne 1}",
         "\\cfrac{1}{1+\\cfrac{1}{x}}",
@@ -788,6 +798,7 @@ fn matrix_environments_build_rows_and_cells() {
         columns,
         alignment,
         cell_style,
+        ..
     } = model.kind(content[0])
     else {
         panic!("expected a table");
@@ -882,6 +893,7 @@ fn environment_variants_keep_their_table_and_name() {
         alignment,
         rows,
         cell_style,
+        ..
     } = document
         .model
         .kind(row(&document.model, document.root())[0])
@@ -1180,4 +1192,73 @@ fn command_shapes_describe_what_the_parser_expects() {
     assert_eq!(command_shape("not"), CommandShape::SymbolArgument);
     assert_eq!(command_shape("genfrac"), CommandShape::Special);
     assert_eq!(command_shape("nope"), CommandShape::Unknown);
+}
+
+#[test]
+fn array_and_alignat_arguments_shape_the_table() {
+    // `array` takes its columns and vertical rules from a preamble and leaves
+    // the cells in the surrounding style.
+    let document = parse("\\begin{array}{l|c|r}a&b\\\\c&d\\end{array}");
+    let NodeKind::Table {
+        columns,
+        alignment,
+        cell_style,
+        column_rules,
+        column_spacing,
+        ..
+    } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected an array table");
+    };
+    assert_eq!(*columns, 3);
+    assert_eq!(
+        alignment,
+        &vec![Alignment::Left, Alignment::Center, Alignment::Right]
+    );
+    assert_eq!(*cell_style, None, "array inherits the surrounding style");
+    assert_eq!(column_rules, &vec![0, 1, 1, 0]);
+    assert_eq!(*column_spacing, ColumnSpacing::Spaced);
+    assert!(
+        document.to_latex().starts_with("\\begin {array}{l|c|r}"),
+        "the writer must keep the column specification"
+    );
+
+    // `alignat` takes a pair count and sets its columns flush, unlike `aligned`.
+    let document = parse("\\begin{alignedat}{2}a&=b&c&=d\\end{alignedat}");
+    let NodeKind::Table {
+        columns,
+        alignment,
+        cell_style,
+        column_rules,
+        column_spacing,
+        ..
+    } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected an alignedat table");
+    };
+    assert_eq!(*columns, 4);
+    assert_eq!(
+        alignment,
+        &vec![
+            Alignment::Right,
+            Alignment::Left,
+            Alignment::Right,
+            Alignment::Left
+        ]
+    );
+    assert_eq!(*cell_style, Some(Style::DISPLAY));
+    assert!(column_rules.is_empty());
+    assert_eq!(*column_spacing, ColumnSpacing::Flush);
+    assert!(document.to_latex().starts_with("\\begin {alignedat}{2}"));
+    assert!(
+        to_latex(&document.model, document.root()).starts_with("\\begin {alignedat}{2}"),
+        "the canonical writer distinguishes alignedat from aligned"
+    );
+
+    let aligned = parse("\\begin{aligned}a&=b\\end{aligned}");
+    assert!(to_latex(&aligned.model, aligned.root()).starts_with("\\begin {aligned}"));
 }

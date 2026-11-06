@@ -9,7 +9,10 @@ that feed it.
 ## Model
 
 ```rust
-Table { rows: Vec<NodeId>, columns: usize, alignment: Vec<Alignment> }
+Table {
+    rows: Vec<NodeId>, columns: usize, alignment: Vec<Alignment>,
+    cell_style: Option<Style>, column_rules: Vec<u8>, column_spacing: ColumnSpacing,
+}
 TableRow { cells: Vec<NodeId> }
 ```
 
@@ -22,14 +25,17 @@ grid.
 
 `alignment` is `Left`, `Center` (the default when an entry is missing) or
 `Right`. It is a per-table list because the table is also the place where
-`aligned` will set its alternating right/left columns.
+`aligned` will set its alternating right/left columns. Cell style, boundary
+rules and column spacing were added later; [`m5-long-tail.md`](m5-long-tail.md)
+describes them.
 
 ## Layout
 
 `layout_table` measures every cell once, takes each column's width as the
 maximum over its cells, and lays rows out top to bottom:
 
-- column gap and row gap are 0.5em;
+- column gap and row gap are 0.5em; a flush table drops the column gap, and a
+  boundary carrying rules widens by their thickness;
 - a row's baseline advances by the previous row's descent plus the row gap plus
   the row's ascent, so rows with tall cells do not overlap;
 - each cell is shifted inside its column by the alignment (left, half the slack,
@@ -60,10 +66,10 @@ recognising its shape in the `Delimited` writer arm, not as
 `\left\{\begin{matrix}…`, so the alignment survives a round trip. `aligned` is
 written by recognising the alternating column list in the `Table` arm.
 
-The writer emits `\begin{matrix}` for a table, ` & ` between cells and ` \\\\ `
-between rows. A table that was read from any environment name other than
-`aligned` is written as a matrix; the fences, where they existed, are written
-separately.
+The writer emits ` & ` between cells and ` \\\\ ` between rows, and puts a
+recorded environment name back around them. Later environment support made the
+canonical spelling depend on the table's shape and cell style; the rules are in
+[`m5-long-tail.md`](m5-long-tail.md).
 
 ## Geometry
 
