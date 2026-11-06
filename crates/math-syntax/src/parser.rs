@@ -811,6 +811,44 @@ impl Parser<'_> {
                 self.advance();
                 self.parse_text(span)
             }
+            // TeX defines `\mathstrut` as `\vphantom{(}`; the atom's span is
+            // the command's, so layout and diagnostics point at what was typed.
+            "mathstrut" => {
+                self.advance();
+                let body = self.make(NodeKind::Atom(Atom::new('(')), span);
+                let node = self.make(
+                    NodeKind::Phantom {
+                        body,
+                        kind: PhantomKind::Vertical,
+                    },
+                    span,
+                );
+                self.spellings
+                    .insert(node, Spelling::math_strut("\\mathstrut".to_owned()));
+                node
+            }
+            "mathchoice" => {
+                self.advance();
+                let display = self.parse_argument(depth + 1, "\\mathchoice");
+                let text = self.parse_argument(depth + 1, "\\mathchoice");
+                let script = self.parse_argument(depth + 1, "\\mathchoice");
+                let script_script = self.parse_argument(depth + 1, "\\mathchoice");
+                let end = [display, text, script, script_script]
+                    .iter()
+                    .map(|choice| self.span_of(*choice).end)
+                    .max()
+                    .unwrap_or(span.end)
+                    .max(span.end);
+                self.make(
+                    NodeKind::MathChoice {
+                        display,
+                        text,
+                        script,
+                        script_script,
+                    },
+                    Span::new(span.start, end),
+                )
+            }
             "phantom" | "hphantom" | "vphantom" => {
                 self.advance();
                 let kind = match name {

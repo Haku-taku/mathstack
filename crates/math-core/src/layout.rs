@@ -18,7 +18,7 @@ use crate::node::{
     PhantomKind, Slot, SpaceKind,
 };
 use crate::span::Span;
-use crate::style::Style;
+use crate::style::{Size, Style};
 use crate::text::{FontShaper, TextShaper, TextStyle};
 
 /// A layout problem for the caller to surface, anchored to its source.
@@ -348,7 +348,44 @@ fn layout_kind(
             layout_wrapped(cx, *body, size, forced, diagnostics)
         }
         NodeKind::Class { body, .. } => layout_wrapped(cx, *body, size, style, diagnostics),
+        NodeKind::MathChoice {
+            display,
+            text,
+            script,
+            script_script,
+        } => {
+            let body = match style.size {
+                Size::Display => *display,
+                Size::Text => *text,
+                Size::Script => *script,
+                Size::ScriptScript => *script_script,
+            };
+            layout_choice(cx, body, style.size, size, style, diagnostics)
+        }
     }
+}
+
+/// Lays out only the branch the current style selects. The other three have no
+/// box, so they contribute no glyphs, diagnostics or geometry.
+fn layout_choice(
+    cx: &Cx<'_>,
+    body: NodeId,
+    chosen: Size,
+    size: f32,
+    style: Style,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> MathBox {
+    let inner = layout_node(cx, body, size, style, diagnostics);
+    let mut out = MathBox {
+        width: inner.width,
+        ascent: inner.ascent,
+        descent: inner.descent,
+        italic: inner.italic,
+        lone_glyph: inner.lone_glyph,
+        ..MathBox::empty()
+    };
+    out.push_child(inner, 0.0, 0.0, Slot::Choice(chosen));
+    out
 }
 
 /// A transparent wrapper: the body's metrics and ink, with itself as the only
@@ -504,7 +541,7 @@ fn layout_row_with(
     let mut classes: Vec<AtomClass> = nodes
         .iter()
         .filter(|id| !cx.model.kind(**id).is_space())
-        .map(|id| node_class(cx, *id))
+        .map(|id| node_class(cx, *id, style))
         .collect();
     cancel_binary(&mut classes);
 
@@ -567,10 +604,10 @@ fn layout_row_with(
 
 /// The spacing class a construct contributes to its row. Scripts keep the
 /// nucleus's class, a fraction is Inner, a radical is Ord.
-fn node_class(cx: &Cx<'_>, id: NodeId) -> AtomClass {
+fn node_class(cx: &Cx<'_>, id: NodeId, style: Style) -> AtomClass {
     match cx.model.kind(id) {
         NodeKind::Atom(atom) => atom.class,
-        NodeKind::Scripts { base, .. } => node_class(cx, *base),
+        NodeKind::Scripts { base, .. } => node_class(cx, *base, style),
         NodeKind::Fraction { .. } | NodeKind::Delimited { .. } => AtomClass::Inner,
         // A group is an ordinary atom in TeX, so `a{+}b` keeps the plus Ord.
         NodeKind::Row(_)
@@ -594,15 +631,31 @@ fn node_class(cx: &Cx<'_>, id: NodeId) -> AtomClass {
             AtomClass::Ord
         }
         NodeKind::Table { .. } | NodeKind::TableRow { .. } => AtomClass::Inner,
-        NodeKind::Smash { body, .. } => node_class(cx, *body),
-        NodeKind::OverUnder { base, .. } => node_class(cx, *base),
+        NodeKind::Smash { body, .. } => node_class(cx, *body, style),
+        NodeKind::OverUnder { base, .. } => node_class(cx, *base, style),
         NodeKind::Class { class, .. } => *class,
         // A style switch is transparent when it wraps one element, so the
         // spacing either side still sees that element's class.
         NodeKind::Styled { body, .. } => match cx.model.kind(*body) {
-            NodeKind::Row(children) if children.len() == 1 => node_class(cx, children[0]),
+            NodeKind::Row(children) if children.len() == 1 => node_class(cx, children[0], style),
             _ => AtomClass::Ord,
         },
+        // The selected branch stands in for the whole node, as TeX expands it
+        // before spacing is computed.
+        NodeKind::MathChoice {
+            display,
+            text,
+            script,
+            script_script,
+        } => {
+            let chosen = match style.size {
+                Size::Display => *display,
+                Size::Text => *text,
+                Size::Script => *script,
+                Size::ScriptScript => *script_script,
+            };
+            node_class(cx, chosen, style)
+        }
     }
 }
 

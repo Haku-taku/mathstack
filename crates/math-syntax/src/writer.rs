@@ -324,17 +324,20 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             }
             write_delimiter(Some(*symbol), out);
         }
-        NodeKind::Phantom { body, kind } => {
-            push_command(
-                out,
-                match kind {
-                    math_core::PhantomKind::Full => "phantom",
-                    math_core::PhantomKind::Horizontal => "hphantom",
-                    math_core::PhantomKind::Vertical => "vphantom",
-                },
-            );
-            write_argument(model, *body, out);
-        }
+        NodeKind::Phantom { body, kind } => match out.spelling(model, id) {
+            Some(text) => out.push_token(&text),
+            None => {
+                push_command(
+                    out,
+                    match kind {
+                        math_core::PhantomKind::Full => "phantom",
+                        math_core::PhantomKind::Horizontal => "hphantom",
+                        math_core::PhantomKind::Vertical => "vphantom",
+                    },
+                );
+                write_argument(model, *body, out);
+            }
+        },
         NodeKind::Smash { body, top, bottom } => {
             push_command(out, "smash");
             if *top && !*bottom {
@@ -376,6 +379,17 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             }
             if *class == AtomClass::Op {
                 write_limits_suffix(*limits, out);
+            }
+        }
+        NodeKind::MathChoice {
+            display,
+            text,
+            script,
+            script_script,
+        } => {
+            push_command(out, "mathchoice");
+            for choice in [display, text, script, script_script] {
+                write_argument(model, *choice, out);
             }
         }
         NodeKind::UnderArrow { symbol, body } => {

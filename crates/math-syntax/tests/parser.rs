@@ -202,6 +202,19 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
             write_dump(model, *body, out);
             out.push(')');
         }
+        NodeKind::MathChoice {
+            display,
+            text,
+            script,
+            script_script,
+        } => {
+            out.push_str("MathChoice(");
+            for choice in [display, text, script, script_script] {
+                write_dump(model, *choice, out);
+                out.push(',');
+            }
+            out.push(')');
+        }
         NodeKind::Error(text) => out.push_str(&format!("Error({text:?})")),
     }
 }
@@ -585,6 +598,56 @@ fn writer_round_trips_the_grammar() {
             "the writer must be idempotent for {source}"
         );
     }
+}
+
+#[test]
+fn mathchoice_keeps_four_branches_in_style_order() {
+    let source = "\\mathchoice{d}{t}{s}{f}";
+    let document = parse(source);
+    assert!(!document.has_errors(), "{:?}", document.diagnostics);
+    let model = &document.model;
+    let NodeKind::MathChoice {
+        display,
+        text,
+        script,
+        script_script,
+    } = model.kind(row(model, document.root())[0])
+    else {
+        panic!("expected a math choice");
+    };
+    for (id, expected) in [
+        (display, 'd'),
+        (text, 't'),
+        (script, 's'),
+        (script_script, 'f'),
+    ] {
+        assert!(
+            matches!(model.kind(*id), NodeKind::Atom(atom) if atom.symbol == expected),
+            "branch {expected} keeps its position"
+        );
+    }
+    let written = document.to_latex();
+    assert_eq!(written, "\\mathchoice {d}{t}{s}{f}");
+    let round_trip = parse(&written);
+    assert_eq!(
+        dump(&document.model, document.root()),
+        dump(&round_trip.model, round_trip.root())
+    );
+}
+
+#[test]
+fn mathstrut_is_a_vertical_paren_phantom() {
+    let document = parse("a\\mathstrut b");
+    assert!(!document.has_errors(), "{:?}", document.diagnostics);
+    let model = &document.model;
+    let root = document.root();
+    let NodeKind::Phantom { body, kind } = model.kind(row(model, root)[1]) else {
+        panic!("expected a phantom");
+    };
+    assert_eq!(*kind, math_core::PhantomKind::Vertical);
+    assert!(matches!(model.kind(*body), NodeKind::Atom(atom) if atom.symbol == '('));
+    assert_eq!(document.to_latex(), "a\\mathstrut b");
+    assert_eq!(to_latex(model, root), "a\\vphantom {(}b");
 }
 
 #[test]

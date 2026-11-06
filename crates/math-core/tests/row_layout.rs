@@ -1309,3 +1309,55 @@ fn display_limits_stack_a_function_under_it() {
     assert!(close(display.width, 15.0));
     assert!(display.descent > 10.0);
 }
+
+#[test]
+fn mathchoice_lays_out_only_the_branch_for_the_style() {
+    let (model, _) = Model::build(|m| {
+        let display = {
+            let atoms = "iiii".chars().map(|symbol| m.symbol(symbol)).collect();
+            m.row(atoms)
+        };
+        let text = {
+            let atoms = "ii".chars().map(|symbol| m.symbol(symbol)).collect();
+            m.row(atoms)
+        };
+        let script = {
+            let atom = m.symbol('i');
+            m.row(vec![atom])
+        };
+        let script_script = {
+            let atoms = "iii".chars().map(|symbol| m.symbol(symbol)).collect();
+            m.row(atoms)
+        };
+        m.math_choice(display, text, script, script_script)
+    });
+
+    // Four atoms in display and text, two in text, one in script and three in
+    // scriptscript: each width is one branch's, laid out at the current size.
+    assert!(close(measured(&model, Style::DISPLAY).width, 20.0));
+    assert!(close(measured(&model, Style::TEXT).width, 10.0));
+    assert!(close(measured(&model, Style::SCRIPT).width, 3.5));
+    assert!(close(measured(&model, Style::SCRIPT_SCRIPT).width, 7.35));
+}
+
+#[test]
+fn mathstrut_shape_keeps_the_paren_extent_in_every_style() {
+    let (model, _) = Model::build(|m| {
+        let a = m.symbol('a');
+        let paren = m.symbol('(');
+        let strut = m.phantom(paren, PhantomKind::Vertical);
+        let b = m.symbol('b');
+        m.row(vec![a, strut, b])
+    });
+
+    // The strut adds no width, and the row is as tall as the paren at the
+    // style's size: 0.6 em up and 0.2 em down.
+    let text = measured(&model, Style::TEXT);
+    assert!(close(text.width, 10.0));
+    assert!(close(text.ascent, 6.0));
+    assert!(close(text.descent, 2.0));
+    let script = measured(&model, Style::SCRIPT);
+    assert!(close(script.width, 7.0));
+    assert!(close(script.ascent, 4.2));
+    assert!(close(script.descent, 1.4));
+}

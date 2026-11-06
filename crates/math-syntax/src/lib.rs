@@ -100,6 +100,17 @@ fn contains_error(model: &Model, id: NodeId) -> bool {
                 || over.is_some_and(|over| contains_error(model, over))
                 || under.is_some_and(|under| contains_error(model, under))
         }
+        NodeKind::MathChoice {
+            display,
+            text,
+            script,
+            script_script,
+        } => {
+            contains_error(model, *display)
+                || contains_error(model, *text)
+                || contains_error(model, *script)
+                || contains_error(model, *script_script)
+        }
     }
 }
 

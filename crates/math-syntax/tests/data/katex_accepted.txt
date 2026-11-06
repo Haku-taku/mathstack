@@ -169,6 +169,7 @@
 \mathbf
 \mathbin
 \mathcal
+\mathchoice
 \mathclose
 \mathfrak
 \mathinner
@@ -182,6 +183,7 @@
 \mathring
 \mathrm
 \mathsf
+\mathstrut
 \mathtt
 \max
 \medspace

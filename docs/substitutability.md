@@ -27,7 +27,7 @@ list of KaTeX commands.
 | Property | State | Evidence |
 | --- | --- | --- |
 | LaTeX input | recursive-descent parser, spans on every node | `math-syntax`; `every_corpus_byte_is_covered_by_a_span_or_diagnostic` |
-| Syntax breadth | 334/987 KaTeX probe entries; 77/77 curated constructs | `docs/completeness.md`; `conformance.rs` |
+| Syntax breadth | 336/987 KaTeX probe entries; 77/77 curated constructs | `docs/completeness.md`; `conformance.rs` |
 | Semantic tree | stable `NodeId` arena, `Origin`, `Span` | `math-core::Model`; M4 tests |
 | Layout | TeX Appendix G rules driven by MATH constants | `math-diff --gate`, 16-formula differential |
 | Fonts | any OpenType MATH face, caller-supplied bytes; `ssty` variants | `math-font`; `script_levels_take_the_fonts_alternates` |
@@ -93,7 +93,7 @@ ratex is a KaTeX port with hardcoded Computer Modern metrics and a flat display
 list (`raw/rust.md`, ratex section).
 
 - **KaTeX command parity:** **not replaceable yet**. The probe baseline is
-  334/987 entries, and probe coverage is not the same as KaTeX's semantics.
+  336/987 entries, and probe coverage is not the same as KaTeX's semantics.
 - **Arbitrary math fonts:** this stack is stronger: layout is MATH-driven and
   accepts caller font bytes, while ratex cannot accept another face.
 - **Editing:** ratex has none.
@@ -113,7 +113,7 @@ stretch and spacing, not a replacement target.
 | `\multicolumn` | spanning cells | needs a cell-span field | implement only when a host document needs it; a table with spans cannot silently degrade to equal cells |
 | `CD` | commutative diagrams | not modelled | do not implement; rare, and its grid is not a table |
 | Colours, `\color`/`\textcolor` | coloured documents | not modelled | implement in 4.7; colour belongs on display items, so it must be designed with the style wrapper rather than patched per node |
-| Style/class wrappers (`\displaystyle`, `\mathop`, the eight `\math*` classes) | custom operators and style control | supported; `\mathstrut` and `\mathchoice` pending | implement the rest with the host document; `\mathop{…}\limits` is the only way to declare a custom operator |
+| Style/class wrappers (`\displaystyle`, `\mathop`, the eight `\math*` classes, `\mathchoice`, `\mathstrut`) | custom operators and style control | supported | `\mathop{…}\limits` is the only way to declare a custom operator |
 | Top-level `\\`, `\newline`, `\par` | multi-line formulas | not modelled | defer until a host document requires it; KaTeX itself accepts them only in specific contexts `[unverified]` |
 | Long-tail symbols (~420) | amsmath relations/arrows | table entries, pending | implement in batches driven by real documents, not by the probe list alone |
 | `\varlim*`, decorated operator bodies | amsmath limit operators | supported | a decorated `lim` is a `Function` under a decoration inside an `Op` class |

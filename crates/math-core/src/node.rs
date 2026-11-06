@@ -180,6 +180,8 @@ pub enum Slot {
     Row,
     /// A table row's cells.
     Cell,
+    /// One of `\mathchoice`'s branches, named by the style that selects it.
+    Choice(Size),
 }
 
 /// How a table column places its cells.
@@ -334,6 +336,15 @@ pub enum NodeKind {
         body: NodeId,
         limits: Limits,
     },
+    /// `\mathchoice`: one branch per style level. Layout lays out the branch
+    /// the current style selects; the others stay in the model for editing and
+    /// writing.
+    MathChoice {
+        display: NodeId,
+        text: NodeId,
+        script: NodeId,
+        script_script: NodeId,
+    },
     /// A stretched arrow below its body (`\underrightarrow`): the body keeps
     /// the baseline and the arrow hangs under it.
     UnderArrow {
@@ -432,6 +443,29 @@ impl NodeKind {
                 }
                 children
             }
+            NodeKind::MathChoice {
+                display,
+                text,
+                script,
+                script_script,
+            } => vec![
+                ChildSlot {
+                    slot: Slot::Choice(Size::Display),
+                    id: *display,
+                },
+                ChildSlot {
+                    slot: Slot::Choice(Size::Text),
+                    id: *text,
+                },
+                ChildSlot {
+                    slot: Slot::Choice(Size::Script),
+                    id: *script,
+                },
+                ChildSlot {
+                    slot: Slot::Choice(Size::ScriptScript),
+                    id: *script_script,
+                },
+            ],
             NodeKind::Fraction {
                 numerator,
                 denominator,
@@ -649,6 +683,17 @@ impl NodeKind {
                 class: *class,
                 body: map(*body),
                 limits: *limits,
+            },
+            NodeKind::MathChoice {
+                display,
+                text,
+                script,
+                script_script,
+            } => NodeKind::MathChoice {
+                display: map(*display),
+                text: map(*text),
+                script: map(*script),
+                script_script: map(*script_script),
             },
             NodeKind::UnderArrow { symbol, body } => NodeKind::UnderArrow {
                 symbol: *symbol,
@@ -1070,6 +1115,18 @@ impl Model {
                 }
                 _ => return Err(EditError::SlotNotEditable),
             },
+            NodeKind::MathChoice {
+                display,
+                text,
+                script,
+                script_script,
+            } => match slot {
+                Slot::Choice(Size::Display) => Some(std::mem::replace(display, child)),
+                Slot::Choice(Size::Text) => Some(std::mem::replace(text, child)),
+                Slot::Choice(Size::Script) => Some(std::mem::replace(script, child)),
+                Slot::Choice(Size::ScriptScript) => Some(std::mem::replace(script_script, child)),
+                _ => return Err(EditError::SlotNotEditable),
+            },
             _ => return Err(EditError::SlotNotEditable),
         };
         Ok(old)
@@ -1441,6 +1498,25 @@ impl ModelBuilder {
                 class,
                 body,
                 limits,
+            },
+            Span::default(),
+        )
+    }
+
+    /// The four branches of `\mathchoice`, in style order.
+    pub fn math_choice(
+        &mut self,
+        display: NodeId,
+        text: NodeId,
+        script: NodeId,
+        script_script: NodeId,
+    ) -> NodeId {
+        self.alloc(
+            NodeKind::MathChoice {
+                display,
+                text,
+                script,
+                script_script,
             },
             Span::default(),
         )

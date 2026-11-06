@@ -125,6 +125,28 @@ so the suffix is a diagnostic after them. The writer prints the command, the
 argument and, for an `Op`, the non-default suffix, so the canonical form keeps
 an explicit class.
 
+## Style-dependent bodies and struts
+
+`\mathchoice{d}{t}{s}{ss}` keeps all four branches as the four children of
+`MathChoice { display, text, script, script_script }`, each in
+`Slot::Choice(Size)`, so a caret path, a copy and a structural edit still name
+the branch by the style it belongs to. Layout lays out only the branch the
+current style selects; the other three have no box, so they emit no glyphs, no
+diagnostics and no geometry, which is what TeX's expansion does. Row spacing
+asks `node_class` for the selected branch, so a `\sum` inside `\mathchoice`
+spaces as an operator in display style. The branches are required slots:
+deleting their contents leaves an empty row rather than removing a branch, and
+the writer prints all four, so canonical `\mathchoice` round-trips exactly.
+
+`\mathstrut` is `\vphantom{(}`. The parser builds a vertical `Phantom` whose
+body is a `(` atom carrying the command's span, so the atom has no source of its
+own to point at. Layout already gives a vertical phantom zero width and the
+body's ascent and descent, and the em follows the current style, so the strut
+is exactly a parenthesis tall at every level. No new node was needed. The
+command's spelling is recorded, so a document writes `\mathstrut` back;
+canonical output without spellings prints `\vphantom{(}`. The caret cannot
+enter the body, as with any `\phantom`.
+
 ## Decorated operators and `\displaylimits`
 
 `\varlimsup`, `\varliminf`, `\varinjlim` and `\varprojlim` are amsmath's
@@ -279,6 +301,15 @@ or brace glyph.
 - `display_limits_stack_a_function_under_it` lays a display-limited function
   and the varlim shape at both styles: the subscript stacks in display style;
   removing the `Function` arm in `takes_limits` fails it.
+- `mathchoice_lays_out_only_the_branch_for_the_style` pins a different width
+  at each of the four styles; always choosing one branch fails it.
+- `mathstrut_shape_keeps_the_paren_extent_in_every_style` pins zero width and
+  the paren's ascent and descent at text and script sizes; laying the phantom
+  out as full or horizontal fails it.
+- `mathchoice_keeps_four_branches_in_style_order` pins each branch's symbol and
+  the written form; swapping two branches in the parser fails it.
+- `mathstrut_is_a_vertical_paren_phantom` pins the node shape, the retained
+  spelling and the canonical `\vphantom{(}`; dropping either fails it.
 - `hspace_resolves_em_ex_and_mu_units` pins the three unit conversions and a
   negative length; changing the `mu` scale makes it fail.
 - `cancel_draws_one_diagonal_per_direction` pins the single-line and both-line

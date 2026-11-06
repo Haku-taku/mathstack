@@ -4,7 +4,9 @@
 //! table keeps the token a document actually used, keyed by node id, and the
 //! writer emits it only while the node still has the shape it was read from.
 
-use math_core::{AtomClass, DelimiterSize, Limits, Model, NodeId, NodeKind, SpaceKind, Variant};
+use math_core::{
+    AtomClass, DelimiterSize, Limits, Model, NodeId, NodeKind, PhantomKind, SpaceKind, Variant,
+};
 use std::collections::BTreeMap;
 
 /// One node's original token and the shape it belonged to.
@@ -49,6 +51,8 @@ pub(crate) enum SpellingKind {
         limits: Limits,
         decoration: OperatorDecoration,
     },
+    /// `\mathstrut`, stored as `\vphantom{(}`.
+    MathStrut,
 }
 
 /// The decoration a named operator command wraps around its `lim`.
@@ -142,6 +146,13 @@ impl Spelling {
             }
             (SpellingKind::Text { content }, NodeKind::Text(current)) => content == current,
             (
+                SpellingKind::MathStrut,
+                NodeKind::Phantom {
+                    body,
+                    kind: PhantomKind::Vertical,
+                },
+            ) => matches!(model.kind(*body), NodeKind::Atom(atom) if atom.symbol == '('),
+            (
                 SpellingKind::DecoratedOperator {
                     class,
                     limits,
@@ -189,6 +200,14 @@ pub struct Spellings {
 }
 
 impl Spelling {
+    /// `\mathstrut`, which the model stores as a zero-width vertical phantom.
+    pub(crate) fn math_strut(text: String) -> Self {
+        Spelling {
+            text,
+            kind: SpellingKind::MathStrut,
+        }
+    }
+
     /// A command such as `\varlimsup`, which the model stores as a class
     /// wrapper over a decoration of `lim`.
     pub(crate) fn decorated_operator(

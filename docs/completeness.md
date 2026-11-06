@@ -12,7 +12,7 @@ KaTeX's MIT-licensed `docs/supported.md` and probe each entry:
 
 - `crates/math-syntax/tests/data/katex_supported.txt` — 954 control sequences;
 - `crates/math-syntax/tests/data/katex_environments.txt` — 33 environment names;
-- `crates/math-syntax/tests/data/katex_accepted.txt` — the 334 entries the
+- `crates/math-syntax/tests/data/katex_accepted.txt` — the 336 entries the
   probes accept today, frozen as a regression baseline.
 
 A probe is one of a few generic uses (`\cmd`, `\cmd{a}`, `\cmd{a}{b}`,
@@ -26,7 +26,7 @@ correctly, and a command with unusual arity can be a false negative.
 
 | Gate | State | How |
 | --- | --- | --- |
-| L1 parse | Partial | 77/77 curated constructs parse (`conformance.rs`); KaTeX list 334/987 through the probe set; `katex_supported_list_does_not_regress` fails if a baselined entry stops parsing; arbitrary text never panics |
+| L1 parse | Partial | 77/77 curated constructs parse (`conformance.rs`); KaTeX list 336/987 through the probe set; `katex_supported_list_does_not_regress` fails if a baselined entry stops parsing; arbitrary text never panics |
 | L2 structure | Partial | Every non-whitespace byte of the curated corpus is inside a node span or a diagnostic (`every_corpus_byte_is_covered_by_a_span_or_diagnostic`); the writer round-trips the supported subset structurally |
 | L3 geometry | Partial | `math-diff --gate` checks the 16-formula differential against per-case documented allowances (±0.01 elsewhere) and fails on any parse or layout diagnostic; the rule-choice cases exceed the note's blanket 1% width threshold |
 | L4 visual | Partial | The native host in `math-editor-demo` paints the display list through `resvg` and draws caret and selection; there is no golden-image or automated screenshot gate |
