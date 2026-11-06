@@ -1,7 +1,5 @@
 # Entries from katex_supported.txt / katex_environments.txt that the probe
-# set accepts (278/987 on 2026-11-07). Regenerate intentionally with:
-#   KATEX_BASELINE=crates/math-syntax/tests/data/katex_accepted.txt \
-#     cargo test -p math-syntax --test completeness katex_supported_list
+# set accepts. Regenerate with the command in docs/completeness.md.
 # A missing entry here is a regression; a new one is reported, not failed.
 \ 
 \#
@@ -92,6 +90,7 @@
 \cup
 \dbinom
 \ddot
+\ddots
 \def
 \delta
 \det
@@ -99,6 +98,11 @@
 \div
 \dot
 \dots
+\dotsb
+\dotsc
+\dotsi
+\dotsm
+\dotso
 \downarrow
 \ell
 \emptyset
@@ -232,9 +236,9 @@
 \supset
 \supseteq
 \tan
-\tbinom
 \tanh
 \tau
+\tbinom
 \text
 \tfrac
 \theta
@@ -257,6 +261,7 @@
 \varrho
 \varsigma
 \vartheta
+\vdots
 \vec
 \vee
 \vert

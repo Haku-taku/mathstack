@@ -459,6 +459,8 @@ fn writer_round_trips_the_grammar() {
         "\\overbrace{a+b}^{n}",
         "\\underbrace{a+b}_{n}",
         "a\\bmod b",
+        "\\cdots+\\vdots+\\ddots",
+        "\\dotsc\\dotsb\\dotsm\\dotsi\\dotso",
     ];
     for source in sources {
         let first = parse(source);
