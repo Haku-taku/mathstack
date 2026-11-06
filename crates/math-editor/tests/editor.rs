@@ -193,7 +193,12 @@ fn undo_and_redo_walk_the_edit_history() {
     assert_eq!(editor.source(), "a");
     assert!(editor.redo(&FakeFont));
     assert_eq!(editor.source(), "ab");
-    assert!(!editor.undo(&FakeFont) || editor.source() == "a");
+    assert!(editor.undo(&FakeFont));
+    assert_eq!(editor.source(), "a");
+    assert!(
+        !editor.undo(&FakeFont),
+        "the initial state is the end of the history"
+    );
 }
 
 #[test]
@@ -262,15 +267,6 @@ fn a_cut_selection_round_trips_through_the_clipboard() {
     assert_eq!(editor.source(), "");
     assert!(editor.insert_latex(&copied, &FakeFont));
     assert_eq!(editor.source(), expected);
-}
-
-#[test]
-fn select_all_then_typing_replaces_the_whole_formula() {
-    let mut editor = editor("a+\\frac{b}{c}");
-    assert!(editor.select_all());
-    assert!(!editor.selection().is_empty());
-    press(&mut editor, Key::Character('x'));
-    assert_eq!(editor.source(), "x");
 }
 
 #[test]

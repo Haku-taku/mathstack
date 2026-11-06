@@ -239,10 +239,8 @@ host depends on:
   cross-model copy and the empty-slot caret;
 - `a_script_shortcut_wraps_the_previous_symbol` — script construction;
 - `a_selection_is_replaced_in_one_undo_step` — selection deletion and history;
-- `select_all_then_typing_replaces_the_whole_formula` — a range that covers
-  whole structures removes them instead of stopping inside a required slot;
-- `a_cut_selection_round_trips_through_the_clipboard` — selection export,
-  cut, and reinsert through the parser;
+- `a_cut_selection_round_trips_through_the_clipboard` — select-all, selection
+  export, cut of whole structures, and reinsert through the parser;
 - `exported_spans_cover_the_text_each_node_wrote` — writer offsets slice the
   emitted atom and fraction text;
 - `synthetic_nodes_get_spans_in_the_exported_source` — a typed node's span
