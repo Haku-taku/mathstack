@@ -458,3 +458,40 @@ fn not_takes_a_relation_command_name() {
     press(&mut editor, Key::Character(' '));
     assert_eq!(editor.source().trim_end(), "\\not\\in");
 }
+
+#[test]
+fn optional_brackets_fill_the_argument_and_drop_when_empty() {
+    let mut sqrt = editor("");
+    press_command(&mut sqrt, "sqrt");
+    press(&mut sqrt, Key::Character('['));
+    assert_eq!(sqrt.source(), "");
+    press(&mut sqrt, Key::Character('3'));
+    press(&mut sqrt, Key::Character(']'));
+    assert_eq!(sqrt.source(), "\\sqrt [3]{}");
+    press(&mut sqrt, Key::Character('x'));
+    assert_eq!(sqrt.source(), "\\sqrt [3]{x}");
+
+    let mut empty = editor("");
+    press_command(&mut empty, "sqrt");
+    press(&mut empty, Key::Character('['));
+    press(&mut empty, Key::Character(']'));
+    assert_eq!(empty.source(), "\\sqrt {}");
+    press(&mut empty, Key::Character('x'));
+    assert_eq!(empty.source(), "\\sqrt {x}");
+
+    let mut smash = editor("");
+    press_command(&mut smash, "smash");
+    press(&mut smash, Key::Character('['));
+    press(&mut smash, Key::Character('t'));
+    press(&mut smash, Key::Character(']'));
+    press(&mut smash, Key::Character('x'));
+    assert_eq!(smash.source(), "\\smash [t]{x}");
+
+    let mut arrow = editor("");
+    press_command(&mut arrow, "xrightarrow");
+    press(&mut arrow, Key::Character('['));
+    press(&mut arrow, Key::Character('u'));
+    press(&mut arrow, Key::Character(']'));
+    press(&mut arrow, Key::Character('x'));
+    assert_eq!(arrow.source(), "\\xrightarrow [u]{x}");
+}

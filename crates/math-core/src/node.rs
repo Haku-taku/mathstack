@@ -109,6 +109,37 @@ impl DelimiterSize {
     }
 }
 
+/// Where an operator's scripts go.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Limits {
+    /// No suffix: the symbol table's answer for display style. The payload is
+    /// that answer, so layout needs no symbol table of its own.
+    Default { display_limits: bool },
+    /// `\limits`: above and below in every style.
+    AboveBelow,
+    /// `\nolimits`: at the operator's side in every style.
+    Beside,
+}
+
+impl Limits {
+    /// Whether this placement puts the scripts above and below in `display`.
+    pub fn above_below(self, display: bool) -> bool {
+        match self {
+            Limits::Default { display_limits } => display_limits && display,
+            Limits::AboveBelow => true,
+            Limits::Beside => false,
+        }
+    }
+}
+
+impl From<bool> for Limits {
+    /// `true` when the operator's table entry puts scripts above and below in
+    /// display style.
+    fn from(display_limits: bool) -> Self {
+        Limits::Default { display_limits }
+    }
+}
+
 /// A node's address in a [`Model`]. Ids are stable until the node is deleted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(u32);
@@ -200,11 +231,11 @@ pub enum NodeKind {
         body: NodeId,
         right: Option<char>,
     },
-    /// A large operator; `limits` is the operator's default placement
-    /// (`\sum` true, `\int` false), applied only in display style.
+    /// A large operator, with its default placement (`\sum` limits, `\int`
+    /// side) and any `\limits`/`\nolimits` suffix.
     LargeOp {
         symbol: char,
-        limits: bool,
+        limits: Limits,
     },
     /// A combining mark drawn above its base (`\hat`, `\bar`, …).
     Accent {
@@ -215,11 +246,11 @@ pub enum NodeKind {
     Text(String),
     /// A live IME preedit: laid out like text, never written, never undoable.
     Composition(String),
-    /// A named operator such as `\sin`, or `\operatorname{…}`; limits apply
-    /// only in display style when `limits` is set.
+    /// A named operator such as `\sin`, or `\operatorname{…}`, with the same
+    /// placement rules as a large operator.
     Function {
         name: String,
-        limits: bool,
+        limits: Limits,
     },
     /// A spacing command; its width does not participate in atom glue.
     Space(SpaceKind),
@@ -1097,6 +1128,12 @@ impl ModelBuilder {
         self.nodes[id.index()].origin = origin;
     }
 
+    /// Replaces a node's kind in place, for a suffix that changes only the
+    /// node's own fields. Unlike [`Model::replace`], the builder never frees.
+    pub fn replace(&mut self, id: NodeId, kind: NodeKind) {
+        self.nodes[id.index()].kind = kind;
+    }
+
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
@@ -1196,8 +1233,15 @@ impl ModelBuilder {
         self.alloc(NodeKind::Delimited { left, body, right }, Span::default())
     }
 
+    /// `limits` is the symbol table's default placement in display style.
     pub fn large_op(&mut self, symbol: char, limits: bool) -> NodeId {
-        self.alloc(NodeKind::LargeOp { symbol, limits }, Span::default())
+        self.alloc(
+            NodeKind::LargeOp {
+                symbol,
+                limits: limits.into(),
+            },
+            Span::default(),
+        )
     }
 
     pub fn accent(&mut self, base: NodeId, symbol: char) -> NodeId {
@@ -1216,11 +1260,12 @@ impl ModelBuilder {
         )
     }
 
+    /// `limits` is the operator's default placement in display style.
     pub fn function(&mut self, name: impl Into<String>, limits: bool) -> NodeId {
         self.alloc(
             NodeKind::Function {
                 name: name.into(),
-                limits,
+                limits: limits.into(),
             },
             Span::default(),
         )

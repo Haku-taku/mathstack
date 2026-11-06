@@ -43,9 +43,8 @@ pub enum CommandShape {
 pub fn command_shape(name: &str) -> CommandShape {
     match name {
         "begin" => CommandShape::Environment,
-        "frac" | "dfrac" | "tfrac" | "cfrac" | "overset" | "underset" | "stackrel" => {
-            CommandShape::TwoMathArguments
-        }
+        "frac" | "dfrac" | "tfrac" | "cfrac" | "binom" | "dbinom" | "tbinom" | "overset"
+        | "underset" | "stackrel" => CommandShape::TwoMathArguments,
         "sqrt" => CommandShape::OptionalMathArgument,
         "smash" => CommandShape::OptionalFlagArgument,
         "xrightarrow" | "xleftarrow" => CommandShape::OptionalUnderArgument,

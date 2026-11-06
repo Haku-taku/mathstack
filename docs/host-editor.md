@@ -92,6 +92,15 @@ command's terminator. Both stages share one `Composition` node, so the caret
 and the reserved space follow `\left\langle` while it is typed. Backspace in
 the nested name returns to the first stage.
 
+An optional `[...]` argument opens on `[` for `\sqrt`, `\smash` and
+`\xrightarrow`/`\xleftarrow`. Its content is collected as math source inside
+the same `Composition` node, so keystrokes and IME text reach it without
+resolving the command; `]` parses the complete snippet (`\sqrt[3]{}`) and
+places the caret in the required argument. Empty brackets drop the optional
+argument and resolve the plain template, and Backspace in an empty bracket
+returns to the first stage. Invalid bracket content keeps the buffer open and
+reports it, rather than restoring the snapshot and losing the keystrokes.
+
 Whitespace between a delimiter command and its fence is ignored, as in LaTeX.
 A `\right` or `\middle` without an enclosing `\left` removes the buffer and
 reports it. Commands whose argument is text or a name — font commands such as
@@ -246,6 +255,9 @@ host depends on:
   leave the caret in the right place;
 - `not_takes_a_relation_command_name` — `\not\in` negates through the same
   nested stage;
+- `optional_brackets_fill_the_argument_and_drop_when_empty` — `\sqrt[3]`,
+  `\smash[t]` and `\xrightarrow[u]` fill their optional argument, and an
+  empty `[]` leaves the plain template;
 - `ime_preedit_is_not_written_and_commits_as_math` — composition export,
   commit, one undo step, and no history entry for the preedit itself;
 - `text_layout_uses_the_host_shaper` — a host run overrides the face fallback
@@ -344,6 +356,12 @@ another key. This is a manual check, not a golden-image gate.
   name still applies. Pinned by
   `command_named_fences_complete_left_middle_and_right` and
   `not_takes_a_relation_command_name`.
+- **`\sqrt[` dropped the bracket.** The command buffer resolved as soon as
+  the next key was not a command letter, so `[` parsed the bare `\sqrt`,
+  applied its empty template, and inserted nothing for the bracket. Optional
+  shapes now collect the bracket's math source in the same `Composition` and
+  resolve only on `]`; an empty bracket leaves the unmodified template.
+  Pinned by `optional_brackets_fill_the_argument_and_drop_when_empty`.
 - **Export silently rewrote a command the user typed.** The model stores
   semantics, so `\pm` and `±` are the same atom, and the writer emitted the
   Unicode character for both; a typed `\le` likewise became `≤`. A `Spellings`
@@ -365,9 +383,7 @@ another key. This is a manual check, not a golden-image gate.
 - Command arguments beyond the template list; a full command palette and
   argument placeholders. Keystroke entry does not cover name or text arguments
   (`\mathbb`, `\text`, `\operatorname`, `\begin`, `\hspace`, `\genfrac`,
-  `\substack`, `\pmod`) or optional brackets (`\sqrt[`, `\smash[`,
-  `\xrightarrow[`); the buffer currently rejects them or consumes the
-  bracket.
+  `\substack`, `\pmod`) or `\operatorname*`'s star.
 - Incremental layout; the editor relayouts the whole formula per edit, which
   the M5 budget measurements justify at this scale.
 - Browser hosts and the visual golden-image gate. The native window is the

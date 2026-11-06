@@ -1,5 +1,5 @@
 # Entries from katex_supported.txt / katex_environments.txt that the probe
-# set accepts (275/987 on 2026-11-07). Regenerate intentionally with:
+# set accepts (278/987 on 2026-11-07). Regenerate intentionally with:
 #   KATEX_BASELINE=crates/math-syntax/tests/data/katex_accepted.txt \
 #     cargo test -p math-syntax --test completeness katex_supported_list
 # A missing entry here is a regression; a new one is reported, not failed.
@@ -64,6 +64,7 @@
 \biguplus
 \bigvee
 \bigwedge
+\binom
 \bmod
 \boldsymbol
 \boxed
@@ -89,6 +90,7 @@
 \coth
 \csc
 \cup
+\dbinom
 \ddot
 \def
 \delta
@@ -230,6 +232,7 @@
 \supset
 \supseteq
 \tan
+\tbinom
 \tanh
 \tau
 \text

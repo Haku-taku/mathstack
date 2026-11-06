@@ -7,7 +7,8 @@
 use crate::spellings::Spellings;
 use crate::symbols;
 use math_core::{
-    Alignment, Atom, FractionRule, Length, LengthUnit, Model, NodeId, NodeKind, Origin, Size, Span,
+    Alignment, Atom, FractionRule, Length, LengthUnit, Limits, Model, NodeId, NodeKind, Origin,
+    Size, Span,
 };
 
 /// Where a node sits: a nested row in an item position needs braces to stay a
@@ -164,6 +165,12 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
         NodeKind::Delimited { left, body, right } => {
             if let Some(table) = cases_table(model, *body, *left, *right) {
                 write_environment(model, table, "cases", out);
+            } else if let Some((command, numerator, denominator)) =
+                binomial(model, *body, *left, *right)
+            {
+                push_command(out, command);
+                write_argument(model, numerator, out);
+                write_argument(model, denominator, out);
             } else {
                 push_command(out, "left");
                 write_delimiter(*left, out);
@@ -172,13 +179,16 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                 write_delimiter(*right, out);
             }
         }
-        NodeKind::LargeOp { symbol, .. } => match out.spelling(model, id) {
-            Some(text) => out.push_token(&text),
-            None => match symbols::large_op_command(*symbol) {
-                Some(name) => push_command(out, name),
-                None => write_symbol(*symbol, out),
-            },
-        },
+        NodeKind::LargeOp { symbol, limits } => {
+            match out.spelling(model, id) {
+                Some(text) => out.push_token(&text),
+                None => match symbols::large_op_command(*symbol) {
+                    Some(name) => push_command(out, name),
+                    None => write_symbol(*symbol, out),
+                },
+            }
+            write_limits_suffix(*limits, out);
+        }
         NodeKind::Accent { base, symbol } => {
             // Parsed accents always have a command; an API-built mark without
             // one falls back to the hat, since the writer has no diagnostics.
@@ -199,21 +209,29 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             out.push_str(text);
             out.push('}');
         }
-        NodeKind::Function { name, limits } => match out.spelling(model, id) {
-            Some(text) => out.push_token(&text),
-            None => match symbols::function_command(name, *limits) {
-                Some(command) => push_command(out, command),
-                None => {
-                    out.push_str("\\operatorname");
-                    if *limits {
-                        out.push('*');
+        NodeKind::Function { name, limits } => {
+            match out.spelling(model, id) {
+                Some(text) => out.push_token(&text),
+                None => match symbols::function_command(name, *limits) {
+                    Some(command) => push_command(out, command),
+                    None => {
+                        out.push_str("\\operatorname");
+                        if matches!(
+                            limits,
+                            Limits::Default {
+                                display_limits: true
+                            }
+                        ) {
+                            out.push('*');
+                        }
+                        out.push('{');
+                        out.push_str(name);
+                        out.push('}');
                     }
-                    out.push('{');
-                    out.push_str(name);
-                    out.push('}');
-                }
-            },
-        },
+                },
+            }
+            write_limits_suffix(*limits, out);
+        }
         NodeKind::Space(kind) => match out.spelling(model, id) {
             Some(text) => out.push_token(&text),
             None => {
@@ -357,6 +375,49 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
         }
     }
     out.spans.push((id, Span::new(start, out.text.len())));
+}
+
+/// `\binom`, `\dbinom` or `\tbinom` for the delimited ruleless fraction they
+/// expand to; other ruleless fractions keep their `\left(…\right)` form.
+fn binomial(
+    model: &Model,
+    body: NodeId,
+    left: Option<char>,
+    right: Option<char>,
+) -> Option<(&'static str, NodeId, NodeId)> {
+    if left != Some('(') || right != Some(')') {
+        return None;
+    }
+    let NodeKind::Row(content) = model.kind(body) else {
+        return None;
+    };
+    let [fraction] = content.as_slice() else {
+        return None;
+    };
+    let NodeKind::Fraction {
+        numerator,
+        denominator,
+        rule: FractionRule::None,
+        style,
+    } = model.kind(*fraction)
+    else {
+        return None;
+    };
+    let command = match style {
+        None => "binom",
+        Some(Size::Display) => "dbinom",
+        Some(Size::Text) => "tbinom",
+        Some(Size::Script | Size::ScriptScript) => return None,
+    };
+    Some((command, *numerator, *denominator))
+}
+
+fn write_limits_suffix(limits: Limits, out: &mut Output<'_>) {
+    match limits {
+        Limits::Default { .. } => {}
+        Limits::AboveBelow => push_command(out, "limits"),
+        Limits::Beside => push_command(out, "nolimits"),
+    }
 }
 
 /// `\begin{name} rows \end{name}` for a table node.

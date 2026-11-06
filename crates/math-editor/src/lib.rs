@@ -71,6 +71,9 @@ pub struct Editor {
     /// The name after a second `\`, as in `\left\langle`; `command` keeps
     /// the first name until both are resolved together.
     command_argument: Option<String>,
+    /// Math source typed inside an optional `[...]` argument, kept as text so
+    /// the parser is still the only grammar. `None` outside that bracket.
+    command_bracket: Option<String>,
     /// The `Composition` node that shows the command being typed, and the
     /// document before it appeared. Cancelling restores that snapshot.
     command_node: Option<NodeId>,
@@ -112,6 +115,7 @@ impl Editor {
             preedit: None,
             command: None,
             command_argument: None,
+            command_bracket: None,
             command_node: None,
             command_before: None,
             command_ime_start: None,
@@ -230,6 +234,7 @@ impl Editor {
         self.preedit = None;
         self.command = None;
         self.command_argument = None;
+        self.command_bracket = None;
         self.command_node = None;
         self.command_before = None;
         self.command_ime_start = None;
@@ -510,7 +515,7 @@ impl Editor {
     /// dismisses it.
     pub fn set_preedit(&mut self, text: &str, font: &dyn MathFont) -> bool {
         self.message = None;
-        if self.command.is_some() && is_command_text(text) {
+        if self.command_accepts_ime(text) {
             return self.absorb_command_ime(text, font);
         }
         if self.command.is_some() {
@@ -583,7 +588,7 @@ impl Editor {
     /// itself never enters the undo history.
     pub fn commit_preedit(&mut self, text: &str, font: &dyn MathFont) -> bool {
         self.message = None;
-        if self.command.is_some() && is_command_text(text) {
+        if self.command_accepts_ime(text) {
             let absorbed = self.absorb_command_ime(text, font);
             // A commit ends the composition; the next letter is typed, not
             // another preedit update to replace.
@@ -652,7 +657,18 @@ impl Editor {
         if self.command_argument.is_some() {
             return self.command_argument_key(key, shift, font);
         }
+        if self.command_bracket.is_some() {
+            return self.command_bracket_key(key, shift, font);
+        }
         match key {
+            // An optional argument starts with `[`; resolving the bare command
+            // here would drop the bracket and apply the template instead.
+            Key::Character('[') if self.command.as_deref().is_some_and(optional_argument_shape) => {
+                self.command_bracket = Some(String::new());
+                self.command_ime_start = None;
+                self.update_command(font);
+                true
+            }
             // A second `\` names a delimiter or relation command, as in
             // `\left\langle` and `\not\in`; letters arrive in the nested
             // buffer instead of extending the first name.
@@ -790,6 +806,82 @@ impl Editor {
         }
     }
 
+    /// Keys inside an optional `[...]` argument. Its content is math source
+    /// collected as text; `]` resolves the whole command through the parser.
+    fn command_bracket_key(&mut self, key: Key, shift: bool, font: &dyn MathFont) -> bool {
+        match key {
+            Key::Character(']') => self.finish_command_bracket(font),
+            Key::Character(symbol) => {
+                if let Some(bracket) = &mut self.command_bracket {
+                    bracket.push(symbol);
+                }
+                self.command_ime_start = None;
+                self.update_command(font);
+                true
+            }
+            Key::Backspace => {
+                let empty = match &mut self.command_bracket {
+                    Some(bracket) => {
+                        bracket.pop();
+                        bracket.is_empty()
+                    }
+                    None => true,
+                };
+                if empty {
+                    self.command_bracket = None;
+                }
+                self.update_command(font);
+                true
+            }
+            Key::Escape => self.cancel_command(font),
+            _ => {
+                let resolved = self.finish_command_bracket(font);
+                if resolved {
+                    self.key(key, shift, font) || true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Completes the command with its optional argument, dropping the brackets
+    /// when nothing was typed so the template's empty form is what remains.
+    fn finish_command_bracket(&mut self, font: &dyn MathFont) -> bool {
+        let Some(content) = self.command_bracket.clone() else {
+            return false;
+        };
+        let Some(name) = self.command.clone() else {
+            return false;
+        };
+        let template = command_template(&name).unwrap_or_else(|| format!("\\{name}"));
+        let snippet = if content.is_empty() {
+            template
+        } else {
+            let Some(position) = template.find('{') else {
+                self.cancel_command(font);
+                self.message = Some(format!("`\\{name}` takes no optional argument"));
+                return true;
+            };
+            format!(
+                "{}[{}]{}",
+                &template[..position],
+                content,
+                &template[position..]
+            )
+        };
+        if parse(&snippet).has_errors() {
+            self.message = Some(format!("invalid optional argument for \\{name}"));
+            return true;
+        }
+        self.command_bracket = None;
+        self.resolve_command_with(Some(snippet), font)
+    }
+
+    fn command_accepts_ime(&self, text: &str) -> bool {
+        self.command.is_some() && (self.command_bracket.is_some() || is_command_text(text))
+    }
+
     /// Starts a command buffer and shows it as a `Composition` at the caret,
     /// so the text being typed takes layout space like any other content.
     fn begin_command(&mut self, font: &dyn MathFont) -> bool {
@@ -835,9 +927,10 @@ impl Editor {
         let (Some(node), Some(name)) = (self.command_node, self.command.as_ref()) else {
             return;
         };
-        let text = match &self.command_argument {
-            Some(argument) => NodeKind::Composition(format!("\\{name}\\{argument}")),
-            None => NodeKind::Composition(format!("\\{name}")),
+        let text = match (&self.command_argument, &self.command_bracket) {
+            (Some(argument), _) => NodeKind::Composition(format!("\\{name}\\{argument}")),
+            (None, Some(bracket)) => NodeKind::Composition(format!("\\{name}[{bracket}")),
+            (None, None) => NodeKind::Composition(format!("\\{name}")),
         };
         if self.replace_kind(node, text).is_ok() {
             self.relayout(font);
@@ -848,7 +941,9 @@ impl Editor {
     /// before it commits). Replace its previous tail instead of cancelling the
     /// pending command, so `\` followed by an IME `f` stays `\f`.
     fn absorb_command_ime(&mut self, text: &str, font: &dyn MathFont) -> bool {
-        let target = if let Some(argument) = self.command_argument.as_mut() {
+        let target = if let Some(bracket) = self.command_bracket.as_mut() {
+            bracket
+        } else if let Some(argument) = self.command_argument.as_mut() {
             argument
         } else if let Some(command) = self.command.as_mut() {
             command
@@ -868,6 +963,7 @@ impl Editor {
     fn cancel_command(&mut self, font: &dyn MathFont) -> bool {
         let had_command = self.command.take().is_some();
         self.command_argument = None;
+        self.command_bracket = None;
         self.command_ime_start = None;
         let node = self.command_node.take();
         let Some(before) = self.command_before.take() else {
@@ -894,6 +990,7 @@ impl Editor {
             return false;
         };
         self.command_argument = None;
+        self.command_bracket = None;
         self.command_ime_start = None;
         let before = self.command_before.take();
         if let Some(node) = self.command_node.take() {
@@ -1892,6 +1989,15 @@ fn is_command_letter(symbol: char) -> bool {
 
 fn is_command_argument_letter(symbol: char) -> bool {
     is_command_letter(symbol) || symbol == '|'
+}
+
+fn optional_argument_shape(name: &str) -> bool {
+    matches!(
+        command_shape(name),
+        CommandShape::OptionalMathArgument
+            | CommandShape::OptionalFlagArgument
+            | CommandShape::OptionalUnderArgument
+    )
 }
 
 fn is_command_text(text: &str) -> bool {

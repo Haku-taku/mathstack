@@ -4,7 +4,7 @@
 //! table keeps the token a document actually used, keyed by node id, and the
 //! writer emits it only while the node still has the shape it was read from.
 
-use math_core::{AtomClass, DelimiterSize, NodeId, NodeKind, SpaceKind, Variant};
+use math_core::{AtomClass, DelimiterSize, Limits, NodeId, NodeKind, SpaceKind, Variant};
 use std::collections::BTreeMap;
 
 /// One node's original token and the shape it belonged to.
@@ -22,11 +22,11 @@ pub(crate) enum SpellingKind {
     },
     LargeOp {
         symbol: char,
-        limits: bool,
+        limits: Limits,
     },
     Function {
         name: String,
-        limits: bool,
+        limits: Limits,
     },
     Space(SpaceKind),
     Accent {

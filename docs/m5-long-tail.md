@@ -86,6 +86,13 @@ that the writer will print through `\atop` is wrapped in a row to match what
 the infix parse produces; without that the structure round trip differed only
 in the wrapper.
 
+`\binom`, `\dbinom` and `\tbinom` are amsmath's `\genfrac` shorthands: a
+`\left(…\right)` pair around a zero-thickness fraction, in the inherited,
+display or text style. They parse into that same `Delimited` + ruleless
+`Fraction` structure rather than a new node, and the writer recognises the shape
+and prints the binomial command back, including when the source spelled it as
+`\left(\genfrac{}{}{0pt}{}{…}{…}\right)`.
+
 ## `\cancel` and line items
 
 The display list had glyphs and axis-aligned rules only. A cancellation is a

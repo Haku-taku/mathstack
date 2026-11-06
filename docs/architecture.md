@@ -522,6 +522,15 @@ model and geometry contracts.
   row carries its italic. Limits still test the base node itself, matching
   `htmlBuilderDelegate`, which does not unwrap. Pinned by
   `single_element_group_scripts_like_its_base`.
+- **Limits placement is three-way, not a boolean.** `LargeOp` and `Function`
+  stored only the symbol table's answer for display style, so `\limits` and
+  `\nolimits` had no representation: the parser rejected both and layout could
+  not put `\int\limits` above and below in text style. The field is now
+  `Limits { Default { display_limits }, AboveBelow, Beside }`; the default's
+  payload keeps the symbol table in `math-syntax` rather than duplicating it in
+  layout, and the writer prints the suffix for the two forced states. Pinned by
+  `operator_suffixes_override_the_display_default` and
+  `operator_suffixes_select_the_limits_placement`.
 - **TeX's three superscript shifts collapse to MATH's two.** TeX picks sup1,
   sup2 or sup3 for display, text and cramped text; MATH has only
   SuperscriptShiftUp and SuperscriptShiftUpCramped, so M1 uses the first for

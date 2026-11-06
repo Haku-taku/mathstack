@@ -31,6 +31,8 @@ command    := '\frac' argument argument
   symbol tables do.
 - Direct Unicode input (`α`, `∑`, `≤`) is a symbol atom too; `∑` typed directly
   is an `Atom` of class Op, not a `LargeOp`, because no `\sum` command was seen.
+- `\limits` and `\nolimits` are postfix: they follow an operator before any
+  script. TeX's `\displaylimits` is not accepted.
 
 ## Mapping to the model
 
@@ -42,7 +44,9 @@ command    := '\frac' argument argument
 | `\frac` | `Fraction { bar: true }` |
 | `\sqrt` | `Radical` |
 | `\left…\right` | `Delimited` |
-| `\sum`, `\int`, … | `LargeOp { symbol, limits }` |
+| `\sum`, `\int`, … | `LargeOp { symbol, limits: Limits }` |
+| `\limits` / `\nolimits` after an operator | `Limits::AboveBelow` / `Beside` |
+| `\binom`, `\dbinom`, `\tbinom` | `Delimited` around a ruleless `Fraction` |
 | unknown command | `Error(raw)` plus a diagnostic |
 
 Scripts attach in either order and leave `sup`/`sub` as `Option`. A second

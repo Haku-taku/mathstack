@@ -1,8 +1,8 @@
 use math_core::{
     Alignment, Atom, AtomClass, Constants, DelimiterSize, FractionRule, Gap, GlyphId, InkBounds,
-    Item, Layout, Length, LengthUnit, MathFont, Model, ModelBuilder, NodeId, PhantomKind,
-    ShapedGlyph, ShapedRun, Size, Stretched, Style, TextShaper, TextStyle, Variant, gap, layout,
-    layout_with_shaper, math_italic, variant_char,
+    Item, Layout, Length, LengthUnit, Limits, MathFont, Model, ModelBuilder, NodeId, NodeKind,
+    PhantomKind, ShapedGlyph, ShapedRun, Size, Stretched, Style, TextShaper, TextStyle, Variant,
+    gap, layout, layout_with_shaper, math_italic, variant_char,
 };
 
 struct FakeFont;
@@ -478,6 +478,47 @@ fn limits_are_display_only_and_clear_the_operator() {
     // Outside display style the same scripts sit at the side (Rule 18).
     assert!(close(text.ascent, 5.4 + 4.2));
     assert!(close(text.descent, 1.8 + 1.4));
+}
+
+#[test]
+fn operator_suffixes_override_the_display_default() {
+    // `\sum\limits` in text style: limits above and below, centred.
+    let (model, root) = Model::build(|m| {
+        let sum = m.large_op('∑', true);
+        m.replace(
+            sum,
+            NodeKind::LargeOp {
+                symbol: '∑',
+                limits: Limits::AboveBelow,
+            },
+        );
+        let n = m.symbol('n');
+        let i = m.symbol('i');
+        m.scripts(sum, Some(n), Some(i))
+    });
+    let text = layout(&Growable, &model, root, 10.0, Style::TEXT).0;
+    assert!(close(text.ascent, 8.9 + 4.2));
+    assert!(close(text.descent, 6.7 + 1.4));
+    assert!(close(text.width, 5.0));
+
+    // `\sum\nolimits` in display style: side scripts, like an integral's.
+    let (model, root) = Model::build(|m| {
+        let sum = m.large_op('∑', true);
+        m.replace(
+            sum,
+            NodeKind::LargeOp {
+                symbol: '∑',
+                limits: Limits::Beside,
+            },
+        );
+        let n = m.symbol('n');
+        let i = m.symbol('i');
+        m.scripts(sum, Some(n), Some(i))
+    });
+    let display = layout(&Growable, &model, root, 10.0, Style::DISPLAY).0;
+    assert!(close(display.ascent, 9.7));
+    assert!(close(display.descent, 5.9));
+    assert!(close(display.width, 9.0));
 }
 
 #[test]

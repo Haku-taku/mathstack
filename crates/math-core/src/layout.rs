@@ -570,12 +570,9 @@ fn layout_scripts(
     style: Style,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> MathBox {
-    // Limits are a display-style placement; elsewhere the same scripts sit at
-    // the side (TeX's movable limits).
-    if takes_limits(cx, base_node)
-        && (style.display() || forces_limits(cx, base_node))
-        && (sup_node.is_some() || sub_node.is_some())
-    {
+    // A symbol's default limits are display-only (TeX's movable limits);
+    // `\limits` forces them in every style and `\nolimits` never uses them.
+    if takes_limits(cx, base_node, style.display()) && (sup_node.is_some() || sub_node.is_some()) {
         return layout_limits(cx, base_node, sup_node, sub_node, size, style, diagnostics);
     }
 
@@ -696,25 +693,20 @@ fn layout_scripts(
     out
 }
 
-fn takes_limits(cx: &Cx<'_>, id: NodeId) -> bool {
+fn takes_limits(cx: &Cx<'_>, id: NodeId, display: bool) -> bool {
     // Limits test the base node itself: KaTeX's builder delegate does not
     // unwrap a group, so `{\sum}_i` keeps side scripts even in display.
-    matches!(
-        cx.model.kind(id),
-        NodeKind::LargeOp { limits: true, .. }
-            | NodeKind::Function { limits: true, .. }
-            | NodeKind::HorizontalBrace { .. }
-    )
+    match cx.model.kind(id) {
+        NodeKind::LargeOp { limits, .. } | NodeKind::Function { limits, .. } => {
+            limits.above_below(display)
+        }
+        NodeKind::HorizontalBrace { .. } => true,
+        _ => false,
+    }
 }
 
-/// Constructs whose scripts stay above and below in every style, unlike a
-/// large operator's movable limits.
-fn forces_limits(cx: &Cx<'_>, id: NodeId) -> bool {
-    matches!(cx.model.kind(id), NodeKind::HorizontalBrace { .. })
-}
-
-/// TeX Rule 13: limits above and below a display-style large operator, each
-/// clearing the operator by its baseline rise/drop or gap, whichever is larger.
+/// TeX Rule 13: limits above and below an operator, each clearing it by its
+/// baseline rise/drop or gap, whichever is larger.
 fn layout_limits(
     cx: &Cx<'_>,
     base_node: NodeId,
@@ -1173,11 +1165,17 @@ fn layout_smash(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> MathBox {
     let body = layout_node(cx, body_node, size, style, diagnostics);
-    MathBox {
-        ascent: if top { 0.0 } else { body.ascent },
-        descent: if bottom { 0.0 } else { body.descent },
-        ..body
-    }
+    // Wrap instead of returning the body box: the SMASH node needs its own id
+    // and Body slot, or an empty body has no caret boundary.
+    let mut out = MathBox::empty();
+    out.width = body.width;
+    out.ascent = if top { 0.0 } else { body.ascent };
+    out.descent = if bottom { 0.0 } else { body.descent };
+    out.italic = body.italic;
+    out.lone_glyph = body.lone_glyph;
+    out.empty_em = body.empty_em;
+    out.push_child(body, 0.0, 0.0, Slot::Body);
+    out
 }
 
 /// `\boxed`: a 3pt pad and a 0.4pt rule at 10pt, TeX's `\fbox` defaults,

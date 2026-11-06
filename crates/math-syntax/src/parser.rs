@@ -6,8 +6,8 @@ use crate::lexer::{Token, TokenKind};
 use crate::spellings::{Spelling, Spellings};
 use crate::symbols;
 use math_core::{
-    Alignment, Atom, Diagnostic, FractionRule, Length, LengthUnit, Model, ModelBuilder, NodeId,
-    NodeKind, Origin, PhantomKind, Size, SpaceKind, Span, Variant,
+    Alignment, Atom, Diagnostic, FractionRule, Length, LengthUnit, Limits, Model, ModelBuilder,
+    NodeId, NodeKind, Origin, PhantomKind, Size, SpaceKind, Span, Variant,
 };
 
 /// LaTeX nesting a formula can plausibly use; deeper input is skipped rather
@@ -289,6 +289,7 @@ impl Parser<'_> {
         } else {
             self.parse_atom(depth)
         };
+        self.parse_limits_suffix(base);
 
         while let Some(is_sup) = self.next_script() {
             let marker = self.advance().expect("peeked a script marker");
@@ -315,6 +316,46 @@ impl Parser<'_> {
             self.model.set_origin(item, origin);
         }
         item
+    }
+
+    /// `\limits` and `\nolimits` directly after an operator override its
+    /// table default; TeX rejects them after a script or a non-operator.
+    fn parse_limits_suffix(&mut self, base: NodeId) {
+        loop {
+            let name = match self.peek().map(|token| &token.kind) {
+                Some(TokenKind::Command(name)) if name == "limits" || name == "nolimits" => {
+                    name.clone()
+                }
+                _ => break,
+            };
+            let span = self.advance().expect("peeked a command").span;
+            let limits = if name == "limits" {
+                Limits::AboveBelow
+            } else {
+                Limits::Beside
+            };
+            let kind = match self.model.kind(base) {
+                NodeKind::LargeOp { symbol, .. } => NodeKind::LargeOp {
+                    symbol: *symbol,
+                    limits,
+                },
+                NodeKind::Function { name, .. } => NodeKind::Function {
+                    name: name.clone(),
+                    limits,
+                },
+                _ => {
+                    self.error(span, format!("`\\{name}` needs an operator"));
+                    continue;
+                }
+            };
+            self.model.replace(base, kind);
+            if self.model.node(base).origin == Origin::Source {
+                // The suffix is not part of the node's span, so its recorded
+                // spelling stays valid for the new placement.
+                let token = self.model.span(base);
+                self.record_spelling(base, token, Origin::Source);
+            }
+        }
     }
 
     fn next_script(&self) -> Option<bool> {
@@ -540,6 +581,43 @@ impl Parser<'_> {
                     }
                 }
             }
+            "binom" | "dbinom" | "tbinom" => {
+                // amsmath's binomials are `\left(…\right)` around a ruleless
+                // fraction, so the existing nodes express them exactly.
+                self.advance();
+                let style = match name {
+                    "dbinom" => Some(Size::Display),
+                    "tbinom" => Some(Size::Text),
+                    _ => None,
+                };
+                let command = format!("\\{name}");
+                let numerator = self.parse_argument(depth + 1, &command);
+                let denominator = self.parse_argument(depth + 1, &command);
+                let end = self
+                    .span_of(denominator)
+                    .end
+                    .max(self.span_of(numerator).end)
+                    .max(span.end);
+                let span = Span::new(span.start, end);
+                let fraction = self.make(
+                    NodeKind::Fraction {
+                        numerator,
+                        denominator,
+                        rule: FractionRule::None,
+                        style,
+                    },
+                    span,
+                );
+                let body = self.make(NodeKind::Row(vec![fraction]), span);
+                self.make(
+                    NodeKind::Delimited {
+                        left: Some('('),
+                        right: Some(')'),
+                        body,
+                    },
+                    span,
+                )
+            }
             "not" => {
                 self.advance();
                 let argument = self.parse_atom(depth + 1);
@@ -745,9 +823,13 @@ impl Parser<'_> {
                     false
                 };
                 match self.text_argument("\\operatorname", span) {
-                    TextArgument::Text(name, span) => {
-                        self.make(NodeKind::Function { name, limits }, span)
-                    }
+                    TextArgument::Text(name, span) => self.make(
+                        NodeKind::Function {
+                            name,
+                            limits: limits.into(),
+                        },
+                        span,
+                    ),
                     TextArgument::Unavailable(span) => {
                         self.make(NodeKind::Error("\\operatorname".to_owned()), span)
                     }
@@ -832,12 +914,18 @@ impl Parser<'_> {
                     self.make(
                         NodeKind::Function {
                             name: display.to_owned(),
-                            limits,
+                            limits: limits.into(),
                         },
                         span,
                     )
                 } else if let Some((symbol, limits)) = symbols::large_op(name) {
-                    self.make(NodeKind::LargeOp { symbol, limits }, span)
+                    self.make(
+                        NodeKind::LargeOp {
+                            symbol,
+                            limits: limits.into(),
+                        },
+                        span,
+                    )
                 } else if let Some(symbol) = symbols::command_char(name) {
                     self.make(
                         NodeKind::Atom(Atom::with_variant(symbol, self.variant)),

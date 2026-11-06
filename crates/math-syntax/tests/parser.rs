@@ -1,5 +1,5 @@
 use math_core::{
-    AtomClass, FractionRule, Model, NodeId, NodeKind, Origin, SpaceKind, Span, Variant,
+    AtomClass, FractionRule, Limits, Model, NodeId, NodeKind, Origin, SpaceKind, Span, Variant,
 };
 use math_syntax::{
     CommandShape, command_shape, command_template, parse, to_latex, to_latex_with_spans,
@@ -94,7 +94,7 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
             out.push(')');
         }
         NodeKind::LargeOp { symbol, limits } => {
-            out.push_str(&format!("LargeOp({symbol:?},{limits})"));
+            out.push_str(&format!("LargeOp({symbol:?},{limits:?})"));
         }
         NodeKind::Accent { base, symbol } => {
             out.push_str(&format!("Accent({symbol:?},"));
@@ -104,7 +104,7 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
         NodeKind::Text(text) => out.push_str(&format!("Text({text:?})")),
         NodeKind::Composition(text) => out.push_str(&format!("Composition({text:?})")),
         NodeKind::Function { name, limits } => {
-            out.push_str(&format!("Function({name:?},{limits})"));
+            out.push_str(&format!("Function({name:?},{limits:?})"));
         }
         NodeKind::Space(kind) => out.push_str(&format!("Space({kind:?})")),
         NodeKind::Hspace(length) => out.push_str(&format!("Hspace({length:?})")),
@@ -238,7 +238,9 @@ fn commands_map_to_the_model() {
         model.kind(*base),
         NodeKind::LargeOp {
             symbol: '∑',
-            limits: true
+            limits: Limits::Default {
+                display_limits: true
+            }
         }
     ));
     assert!(sub.is_some());
@@ -266,7 +268,9 @@ fn commands_map_to_the_model() {
         model.kind(*base),
         NodeKind::LargeOp {
             symbol: '∫',
-            limits: false
+            limits: Limits::Default {
+                display_limits: false
+            }
         }
     ));
 
@@ -381,6 +385,13 @@ fn writer_round_trips_the_grammar() {
         "\\left\\{x\\right\\}",
         "\\left\\|x\\right.",
         "\\sum_{i=1}^{n}",
+        "\\sum\\limits_{i=1}^{n}",
+        "\\int\\nolimits_0^1",
+        "\\lim\\limits_{x\\to 0}",
+        "\\operatorname{rank}\\limits_x",
+        "\\binom{n}{k}",
+        "\\dbinom{n}{k}",
+        "\\tbinom{n}{k}",
         "\\int_0^1",
         "\\alpha+\\beta\\le\\gamma",
         "x^2+a_i+\\frac{a+b}{2}=\\sqrt{c+d}",
@@ -472,6 +483,61 @@ fn writer_round_trips_the_grammar() {
             latex,
             "the writer must be idempotent for {source}"
         );
+    }
+}
+
+#[test]
+fn operator_suffixes_select_the_limits_placement() {
+    let document = parse("\\int\\limits_0^1");
+    let NodeKind::Scripts { base, .. } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected scripts");
+    };
+    assert!(matches!(
+        document.model.kind(*base),
+        NodeKind::LargeOp {
+            symbol: '∫',
+            limits: Limits::AboveBelow
+        }
+    ));
+
+    let document = parse("\\sum\\nolimits_{i=1}^n");
+    let NodeKind::Scripts { base, .. } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected scripts");
+    };
+    assert!(matches!(
+        document.model.kind(*base),
+        NodeKind::LargeOp {
+            symbol: '∑',
+            limits: Limits::Beside
+        }
+    ));
+}
+
+#[test]
+fn binomial_commands_write_as_binomials() {
+    for (source, expected) in [
+        ("\\binom{n}{k}", "\\binom {n}{k}"),
+        ("\\dbinom{n}{k}", "\\dbinom {n}{k}"),
+        ("\\tbinom{n}{k}", "\\tbinom {n}{k}"),
+        // The story the commands expand to writes back in binomial form.
+        (
+            "\\left(\\genfrac{}{}{0pt}{}{a}{b}\\right)",
+            "\\binom {{a}}{{b}}",
+        ),
+    ] {
+        let document = parse(source);
+        assert!(
+            !document.has_errors(),
+            "{source} must parse cleanly: {:?}",
+            document.diagnostics
+        );
+        assert_eq!(document.to_latex(), expected, "{source}");
     }
 }
 
@@ -740,14 +806,14 @@ fn spacing_and_operators_reach_the_model() {
     let children = row(model, root);
     assert!(matches!(
         model.kind(children[0]),
-        NodeKind::Function { name, limits: false } if name == "sin"
+        NodeKind::Function { name, limits: Limits::Default { display_limits: false } } if name == "sin"
     ));
     let NodeKind::Scripts { base, .. } = model.kind(children[3]) else {
         panic!("expected scripts");
     };
     assert!(matches!(
         model.kind(*base),
-        NodeKind::Function { name, limits: true } if name == "lim"
+        NodeKind::Function { name, limits: Limits::Default { display_limits: true } } if name == "lim"
     ));
 
     let document = parse("\\operatorname*{argmax}_x");
@@ -758,7 +824,7 @@ fn spacing_and_operators_reach_the_model() {
     };
     assert!(matches!(
         model.kind(*base),
-        NodeKind::Function { name, limits: true } if name == "argmax"
+        NodeKind::Function { name, limits: Limits::Default { display_limits: true } } if name == "argmax"
     ));
 
     let document = parse("a \\atop b");
@@ -828,6 +894,8 @@ fn command_shapes_describe_what_the_parser_expects() {
     assert_eq!(command_shape("bmod"), CommandShape::None);
     assert_eq!(command_shape("frac"), CommandShape::TwoMathArguments);
     assert_eq!(command_template("frac").as_deref(), Some("\\frac{}{}"));
+    assert_eq!(command_shape("binom"), CommandShape::TwoMathArguments);
+    assert_eq!(command_template("dbinom").as_deref(), Some("\\dbinom{}{}"));
     assert_eq!(command_shape("hat"), CommandShape::MathArgument);
     assert_eq!(command_template("hat").as_deref(), Some("\\hat{}"));
     assert_eq!(command_shape("mathbb"), CommandShape::VariantArgument);

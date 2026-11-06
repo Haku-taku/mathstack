@@ -3,7 +3,7 @@
 //! The codepoints follow unicode-math, which is what KaTeX's symbol tables
 //! (MIT) encode; see `THIRD-PARTY.md`.
 
-use math_core::{AtomClass, DelimiterSize, SpaceKind, Variant};
+use math_core::{AtomClass, DelimiterSize, Limits, SpaceKind, Variant};
 
 /// An accent command's spacing mark, as KaTeX draws it.
 pub(crate) fn accent(name: &str) -> Option<char> {
@@ -192,7 +192,7 @@ pub(crate) fn function(name: &str) -> Option<(&'static str, bool)> {
     Some(function)
 }
 
-pub(crate) fn function_command(name: &str, limits: bool) -> Option<&'static str> {
+pub(crate) fn function_command(name: &str, limits: Limits) -> Option<&'static str> {
     let command = match name {
         "sin" => "sin",
         "cos" => "cos",
@@ -227,7 +227,10 @@ pub(crate) fn function_command(name: &str, limits: bool) -> Option<&'static str>
         name,
         "lim" | "lim sup" | "lim inf" | "max" | "min" | "sup" | "inf" | "det" | "gcd" | "Pr"
     );
-    (limits == default_limits).then_some(command)
+    match limits {
+        Limits::Default { display_limits } => (display_limits == default_limits).then_some(command),
+        Limits::AboveBelow | Limits::Beside => Some(command),
+    }
 }
 
 pub(crate) fn variant_command(variant: Variant) -> Option<&'static str> {
