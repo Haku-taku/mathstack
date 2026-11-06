@@ -14,7 +14,7 @@ mod writer;
 
 use math_core::Diagnostic;
 
-pub use commands::{CommandShape, command_shape, command_template};
+pub use commands::{CommandShape, command_shape, command_template, delimiter_symbol};
 pub use math_core::{Model, Node, NodeId, NodeKind, Span};
 pub use spellings::{Spelling, Spellings};
 pub use writer::{

@@ -417,3 +417,44 @@ fn commands_taking_a_symbol_keep_the_key_that_ended_them() {
     press(&mut not, Key::Character('='));
     assert_eq!(not.source(), "\\not=");
 }
+
+#[test]
+fn command_named_fences_complete_left_middle_and_right() {
+    let mut editor = editor("");
+    press_command(&mut editor, "left");
+    press(&mut editor, Key::Character('\\'));
+    for letter in "langle".chars() {
+        press(&mut editor, Key::Character(letter));
+    }
+    press(&mut editor, Key::Character(' '));
+    assert_eq!(editor.source().trim_end(), "\\left \\langle \\right .");
+
+    press(&mut editor, Key::Character('a'));
+    press_command(&mut editor, "middle");
+    press(&mut editor, Key::Character('\\'));
+    press(&mut editor, Key::Character('|'));
+    press(&mut editor, Key::Character(' '));
+    press(&mut editor, Key::Character('b'));
+    press_command(&mut editor, "right");
+    press(&mut editor, Key::Character('\\'));
+    for letter in "rangle".chars() {
+        press(&mut editor, Key::Character(letter));
+    }
+    press(&mut editor, Key::Character(' '));
+    assert_eq!(
+        editor.source().trim_end(),
+        "\\left \\langle a\\middle \\| b\\right \\rangle"
+    );
+}
+
+#[test]
+fn not_takes_a_relation_command_name() {
+    let mut editor = editor("");
+    press_command(&mut editor, "not");
+    press(&mut editor, Key::Character('\\'));
+    for letter in "in".chars() {
+        press(&mut editor, Key::Character(letter));
+    }
+    press(&mut editor, Key::Character(' '));
+    assert_eq!(editor.source().trim_end(), "\\not\\in");
+}

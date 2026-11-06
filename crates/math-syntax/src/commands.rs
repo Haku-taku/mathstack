@@ -77,6 +77,11 @@ pub fn command_shape(name: &str) -> CommandShape {
     }
 }
 
+/// The delimiter a command name stands for; `|` is the double bar as `\|` is.
+pub fn delimiter_symbol(name: &str) -> Option<char> {
+    symbols::delimiter(name)
+}
+
 /// The empty-argument snippet a host may insert for `name`, when the shape
 /// allows one. Variant and name arguments need model support the editor does
 /// not have yet, so they deliberately return `None`.

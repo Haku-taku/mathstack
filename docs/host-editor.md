@@ -83,6 +83,15 @@ buffer instead of parsing a bare command:
 - the `\big` family (`\bigl(`) and `\not=` keep the symbol key that ended
   the buffer.
 
+A second `\` inside a delimiter command opens a nested name, so the command
+forms users write also work: `\left\langle`, `\right\rangle`,
+`\middle\|`, `\bigl\langle` and `\not\in`. The nested name ends at
+whitespace or at any key that is not a command letter; that key is then
+applied after the completed command, and whitespace is consumed as the
+command's terminator. Both stages share one `Composition` node, so the caret
+and the reserved space follow `\left\langle` while it is typed. Backspace in
+the nested name returns to the first stage.
+
 Whitespace between a delimiter command and its fence is ignored, as in LaTeX.
 A `\right` or `\middle` without an enclosing `\left` removes the buffer and
 reports it. Commands whose argument is text or a name — font commands such as
@@ -232,6 +241,11 @@ host depends on:
   child exports `x^{a}`, not `x^{{a}}`;
 - `commands_taking_a_symbol_keep_the_key_that_ended_them` — `\bigl(` and
   `\not=` insert their structure instead of restoring the snapshot;
+- `command_named_fences_complete_left_middle_and_right` — `\left\langle`,
+  `\middle\|` and `\right\rangle` complete through the nested name and
+  leave the caret in the right place;
+- `not_takes_a_relation_command_name` — `\not\in` negates through the same
+  nested stage;
 - `ime_preedit_is_not_written_and_commits_as_math` — composition export,
   commit, one undo step, and no history entry for the preedit itself;
 - `text_layout_uses_the_host_shaper` — a host run overrides the face fallback
@@ -321,6 +335,15 @@ another key. This is a manual check, not a golden-image gate.
   buffer as the fence and inserts a `Delimited` with an invisible right fence;
   typing `\right)` inside sets that fence and leaves the delimiter. The test
   also covers the space LaTeX allows between the command and its fence.
+- **A delimiter name could not follow `\left`.** `\left\langle` resolved
+  `left` at the second `\`, parsed a bare command, failed, and restored the
+  snapshot, so the whole fence vanished. A delimiter or relation command now
+  opens a nested name stage on `\`; the nested name completes the outer
+  command (`\left\langle`, `\right\rangle`, `\middle\|`, `\bigl\langle`,
+  `\not\in`). Both stages are one `Composition` node, and the key after the
+  name still applies. Pinned by
+  `command_named_fences_complete_left_middle_and_right` and
+  `not_takes_a_relation_command_name`.
 - **Export silently rewrote a command the user typed.** The model stores
   semantics, so `\pm` and `±` are the same atom, and the writer emitted the
   Unicode character for both; a typed `\le` likewise became `≤`. A `Spellings`
@@ -342,9 +365,9 @@ another key. This is a manual check, not a golden-image gate.
 - Command arguments beyond the template list; a full command palette and
   argument placeholders. Keystroke entry does not cover name or text arguments
   (`\mathbb`, `\text`, `\operatorname`, `\begin`, `\hspace`, `\genfrac`,
-  `\substack`, `\pmod`), command fences (`\left\langle`), or optional
-  brackets (`\sqrt[`, `\smash[`, `\xrightarrow[`); the buffer currently
-  rejects them or consumes the bracket.
+  `\substack`, `\pmod`) or optional brackets (`\sqrt[`, `\smash[`,
+  `\xrightarrow[`); the buffer currently rejects them or consumes the
+  bracket.
 - Incremental layout; the editor relayouts the whole formula per edit, which
   the M5 budget measurements justify at this scale.
 - Browser hosts and the visual golden-image gate. The native window is the

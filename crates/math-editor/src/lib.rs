@@ -11,7 +11,7 @@ use math_core::{
     layout_with_shaper_and_geometry,
 };
 use math_syntax::{
-    CommandShape, Document, Spellings, command_shape, command_template, parse,
+    CommandShape, Document, Spellings, command_shape, command_template, delimiter_symbol, parse,
     to_latex_with_spans_and_spellings, to_latex_with_spellings,
 };
 use std::sync::Arc;
@@ -68,6 +68,9 @@ pub struct Editor {
     shaper: Option<Arc<dyn TextShaper>>,
     preedit: Option<Preedit>,
     command: Option<String>,
+    /// The name after a second `\`, as in `\left\langle`; `command` keeps
+    /// the first name until both are resolved together.
+    command_argument: Option<String>,
     /// The `Composition` node that shows the command being typed, and the
     /// document before it appeared. Cancelling restores that snapshot.
     command_node: Option<NodeId>,
@@ -108,6 +111,7 @@ impl Editor {
             shaper: None,
             preedit: None,
             command: None,
+            command_argument: None,
             command_node: None,
             command_before: None,
             command_ime_start: None,
@@ -225,6 +229,7 @@ impl Editor {
         self.redo.clear();
         self.preedit = None;
         self.command = None;
+        self.command_argument = None;
         self.command_node = None;
         self.command_before = None;
         self.command_ime_start = None;
@@ -644,7 +649,26 @@ impl Editor {
     }
 
     fn command_key(&mut self, key: Key, shift: bool, font: &dyn MathFont) -> bool {
+        if self.command_argument.is_some() {
+            return self.command_argument_key(key, shift, font);
+        }
         match key {
+            // A second `\` names a delimiter or relation command, as in
+            // `\left\langle` and `\not\in`; letters arrive in the nested
+            // buffer instead of extending the first name.
+            Key::Character('\\')
+                if self.command.as_deref().is_some_and(|name| {
+                    matches!(
+                        command_shape(name),
+                        CommandShape::Delimiter | CommandShape::SymbolArgument
+                    )
+                }) =>
+            {
+                self.command_argument = Some(String::new());
+                self.command_ime_start = None;
+                self.update_command(font);
+                true
+            }
             Key::Character(symbol) if is_command_letter(symbol) => {
                 if let Some(command) = &mut self.command {
                     command.push(symbol);
@@ -673,10 +697,12 @@ impl Editor {
             // fence, so a space must not resolve the buffer and lose the fence.
             Key::Character(symbol)
                 if symbol.is_whitespace()
-                    && self
-                        .command
-                        .as_deref()
-                        .is_some_and(|name| command_shape(name) == CommandShape::Delimiter) =>
+                    && self.command.as_deref().is_some_and(|name| {
+                        matches!(
+                            command_shape(name),
+                            CommandShape::Delimiter | CommandShape::SymbolArgument
+                        )
+                    }) =>
             {
                 true
             }
@@ -720,6 +746,45 @@ impl Editor {
                     self.key(key, shift, font) || resolved
                 } else {
                     true
+                }
+            }
+        }
+    }
+
+    /// Keys inside the second `\` name, which only ends on whitespace or a
+    /// key that is not a command letter.
+    fn command_argument_key(&mut self, key: Key, shift: bool, font: &dyn MathFont) -> bool {
+        match key {
+            Key::Character(symbol) if is_command_argument_letter(symbol) => {
+                if let Some(argument) = &mut self.command_argument {
+                    argument.push(symbol);
+                }
+                self.command_ime_start = None;
+                self.update_command(font);
+                true
+            }
+            Key::Backspace => {
+                let empty = match &mut self.command_argument {
+                    Some(argument) => {
+                        argument.pop();
+                        argument.is_empty()
+                    }
+                    None => true,
+                };
+                if empty {
+                    self.command_argument = None;
+                }
+                self.update_command(font);
+                true
+            }
+            Key::Escape => self.cancel_command(font),
+            Key::Character(symbol) if symbol.is_whitespace() => self.finish_command_argument(font),
+            _ => {
+                let resolved = self.finish_command_argument(font);
+                if resolved {
+                    self.key(key, shift, font) || true
+                } else {
+                    false
                 }
             }
         }
@@ -770,7 +835,10 @@ impl Editor {
         let (Some(node), Some(name)) = (self.command_node, self.command.as_ref()) else {
             return;
         };
-        let text = NodeKind::Composition(format!("\\{name}"));
+        let text = match &self.command_argument {
+            Some(argument) => NodeKind::Composition(format!("\\{name}\\{argument}")),
+            None => NodeKind::Composition(format!("\\{name}")),
+        };
         if self.replace_kind(node, text).is_ok() {
             self.relayout(font);
         }
@@ -780,12 +848,16 @@ impl Editor {
     /// before it commits). Replace its previous tail instead of cancelling the
     /// pending command, so `\` followed by an IME `f` stays `\f`.
     fn absorb_command_ime(&mut self, text: &str, font: &dyn MathFont) -> bool {
-        let Some(command) = self.command.as_mut() else {
+        let target = if let Some(argument) = self.command_argument.as_mut() {
+            argument
+        } else if let Some(command) = self.command.as_mut() {
+            command
+        } else {
             return false;
         };
-        let base = self.command_ime_start.take().unwrap_or(command.len());
-        command.truncate(base);
-        command.push_str(text);
+        let base = self.command_ime_start.take().unwrap_or(target.len());
+        target.truncate(base);
+        target.push_str(text);
         if !text.is_empty() {
             self.command_ime_start = Some(base);
         }
@@ -795,6 +867,7 @@ impl Editor {
 
     fn cancel_command(&mut self, font: &dyn MathFont) -> bool {
         let had_command = self.command.take().is_some();
+        self.command_argument = None;
         self.command_ime_start = None;
         let node = self.command_node.take();
         let Some(before) = self.command_before.take() else {
@@ -820,6 +893,7 @@ impl Editor {
         let Some(name) = self.command.take() else {
             return false;
         };
+        self.command_argument = None;
         self.command_ime_start = None;
         let before = self.command_before.take();
         if let Some(node) = self.command_node.take() {
@@ -887,11 +961,51 @@ impl Editor {
         true
     }
 
+    /// Turns `\left\langle` and its relatives into one snippet or edit once
+    /// the second name ends.
+    fn finish_command_argument(&mut self, font: &dyn MathFont) -> bool {
+        let Some(argument) = self.command_argument.take() else {
+            return false;
+        };
+        let Some(name) = self.command.clone() else {
+            return false;
+        };
+        if argument.is_empty() {
+            self.cancel_command(font);
+            self.message = Some(format!("`\\{name}` needs a command name"));
+            return true;
+        }
+        if name == "not" {
+            let snippet = format!("\\not\\{argument}");
+            if parse(&snippet).has_errors() {
+                self.cancel_command(font);
+                self.message = Some(format!("`\\not` cannot precede \\{argument}"));
+                return true;
+            }
+            return self.resolve_command_with(Some(snippet), font);
+        }
+        let Some(symbol) = delimiter_symbol(&argument) else {
+            self.cancel_command(font);
+            self.message = Some(format!("unknown delimiter \\{argument}"));
+            return true;
+        };
+        match name.as_str() {
+            "left" => self.resolve_command_with(Some(format!("\\left\\{argument}\\right.")), font),
+            "right" => self.close_delimiter_with(Some(symbol), font),
+            "middle" => self.insert_middle_with(symbol, font),
+            _ => self.resolve_command_with(Some(format!("\\{name}\\{argument}")), font),
+        }
+    }
+
     /// Inserts a `\middle` fence; it is only valid inside a `\left` body.
     fn insert_middle(&mut self, symbol: char, font: &dyn MathFont) -> bool {
         let Some(Some(symbol)) = delimiter_fence(symbol) else {
             return self.resolve_command(font);
         };
+        self.insert_middle_with(symbol, font)
+    }
+
+    fn insert_middle_with(&mut self, symbol: char, font: &dyn MathFont) -> bool {
         let enclosed = self.caret.steps.iter().any(|step| {
             step.slot == Slot::Body
                 && matches!(self.model.kind(step.node), NodeKind::Delimited { .. })
@@ -904,6 +1018,7 @@ impl Editor {
         if self.command.take().is_none() {
             return false;
         }
+        self.command_argument = None;
         self.command_ime_start = None;
         let before = self.command_before.take();
         if let Some(node) = self.command_node.take()
@@ -949,6 +1064,10 @@ impl Editor {
         let Some(right) = delimiter_fence(symbol) else {
             return self.resolve_command(font);
         };
+        self.close_delimiter_with(right, font)
+    }
+
+    fn close_delimiter_with(&mut self, right: Option<char>, font: &dyn MathFont) -> bool {
         let delimited = self.caret.steps.iter().rev().find_map(|step| {
             (step.slot == Slot::Body
                 && matches!(self.model.kind(step.node), NodeKind::Delimited { .. }))
@@ -963,6 +1082,7 @@ impl Editor {
             return false;
         };
         debug_assert_eq!(name, "right");
+        self.command_argument = None;
         self.command_ime_start = None;
         let before = self.command_before.take();
         if let Some(node) = self.command_node.take()
@@ -1768,6 +1888,10 @@ impl Editor {
 
 fn is_command_letter(symbol: char) -> bool {
     symbol.is_ascii_alphabetic() || symbol == '@'
+}
+
+fn is_command_argument_letter(symbol: char) -> bool {
+    is_command_letter(symbol) || symbol == '|'
 }
 
 fn is_command_text(text: &str) -> bool {
