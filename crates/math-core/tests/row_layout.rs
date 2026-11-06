@@ -1,8 +1,8 @@
 use math_core::{
     Alignment, Atom, AtomClass, ColumnSpacing, Constants, DelimiterSize, FractionRule, Gap,
     GlyphId, InkBounds, Item, Layout, Length, LengthUnit, Limits, MathFont, Model, ModelBuilder,
-    NodeId, NodeKind, PhantomKind, ShapedGlyph, ShapedRun, Size, Stretched, Style, TextShaper,
-    TextStyle, Variant, gap, layout, layout_with_shaper, math_italic, variant_char,
+    NodeId, NodeKind, PhantomKind, ShapedGlyph, ShapedRun, Size, Span, Stretched, Style,
+    TextShaper, TextStyle, Variant, gap, layout, layout_with_shaper, math_italic, variant_char,
 };
 
 struct FakeFont;
@@ -1267,4 +1267,45 @@ fn mathop_takes_limits_in_display_style() {
     let text = measured(&model, Style::TEXT);
     assert!(text.width > display.width);
     assert!(close(text.ascent, 6.0));
+}
+
+#[test]
+fn display_limits_stack_a_function_under_it() {
+    // `\operatorname{lim}\displaylimits`: the Function's own limits flag stacks
+    // the subscript, which is what the writer's rewritten suffix relies on.
+    let (plain, _) = Model::build(|m| {
+        let lim = m.function("lim", true);
+        let x = m.symbol('x');
+        m.scripts(lim, None, Some(x))
+    });
+    let display = measured(&plain, Style::DISPLAY);
+    assert!(close(display.width, 15.0));
+    assert!(close(display.ascent, 6.0));
+    let text = measured(&plain, Style::TEXT);
+    assert!(text.width > display.width);
+
+    // The `\varliminf` family wraps the same Function in an Op class; the
+    // wrapper's limits decide, and the arrow hangs below the body.
+    let (decorated, _) = Model::build(|m| {
+        let lim = m.function("lim", false);
+        let arrow = m.alloc(
+            NodeKind::UnderArrow {
+                symbol: '→',
+                body: lim,
+            },
+            Span::default(),
+        );
+        let op = m.classed(
+            AtomClass::Op,
+            arrow,
+            Limits::Default {
+                display_limits: true,
+            },
+        );
+        let x = m.symbol('x');
+        m.scripts(op, None, Some(x))
+    });
+    let display = measured(&decorated, Style::DISPLAY);
+    assert!(close(display.width, 15.0));
+    assert!(display.descent > 10.0);
 }

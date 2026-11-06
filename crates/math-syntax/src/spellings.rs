@@ -4,7 +4,7 @@
 //! table keeps the token a document actually used, keyed by node id, and the
 //! writer emits it only while the node still has the shape it was read from.
 
-use math_core::{AtomClass, DelimiterSize, Limits, NodeId, NodeKind, SpaceKind, Variant};
+use math_core::{AtomClass, DelimiterSize, Limits, Model, NodeId, NodeKind, SpaceKind, Variant};
 use std::collections::BTreeMap;
 
 /// One node's original token and the shape it belonged to.
@@ -43,6 +43,20 @@ pub(crate) enum SpellingKind {
     Text {
         content: String,
     },
+    /// A named command that parses to a decorated `lim` operator.
+    DecoratedOperator {
+        class: AtomClass,
+        limits: Limits,
+        decoration: OperatorDecoration,
+    },
+}
+
+/// The decoration a named operator command wraps around its `lim`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum OperatorDecoration {
+    Overline,
+    Underline,
+    UnderArrow(char),
 }
 
 impl Spelling {
@@ -84,7 +98,8 @@ impl Spelling {
 
     /// Whether the node still means what the token said; a freed id may be
     /// reused, and an edited node may have a different symbol or variant.
-    pub(crate) fn matches(&self, kind: &NodeKind) -> bool {
+    pub(crate) fn matches(&self, model: &Model, id: NodeId) -> bool {
+        let kind = model.kind(id);
         match (&self.kind, kind) {
             (SpellingKind::Atom { symbol, variant }, NodeKind::Atom(atom)) => {
                 *symbol == atom.symbol && *variant == atom.variant
@@ -126,9 +141,42 @@ impl Spelling {
                 symbol == current
             }
             (SpellingKind::Text { content }, NodeKind::Text(current)) => content == current,
+            (
+                SpellingKind::DecoratedOperator {
+                    class,
+                    limits,
+                    decoration,
+                },
+                NodeKind::Class {
+                    class: current_class,
+                    body,
+                    limits: current_limits,
+                },
+            ) => {
+                class == current_class
+                    && limits == current_limits
+                    && decoration_matches(model, *body, decoration)
+            }
             _ => false,
         }
     }
+}
+
+/// Whether the class wrapper still holds the decorated `lim` it was read from.
+fn decoration_matches(model: &Model, id: NodeId, decoration: &OperatorDecoration) -> bool {
+    let body = match (decoration, model.kind(id)) {
+        (OperatorDecoration::Overline, NodeKind::Overline { body }) => *body,
+        (OperatorDecoration::Underline, NodeKind::Underline { body }) => *body,
+        (
+            OperatorDecoration::UnderArrow(symbol),
+            NodeKind::UnderArrow {
+                symbol: current,
+                body,
+            },
+        ) if symbol == current => *body,
+        _ => return false,
+    };
+    matches!(model.kind(body), NodeKind::Function { name, .. } if name == "lim")
 }
 
 /// Source spellings by node, kept beside a `Model` rather than inside it.
@@ -138,6 +186,26 @@ pub struct Spellings {
     /// The environment a table, its fenced wrapper, or an unwrapped
     /// `equation` body was written as; the model only keeps its shape.
     environments: BTreeMap<NodeId, String>,
+}
+
+impl Spelling {
+    /// A command such as `\varlimsup`, which the model stores as a class
+    /// wrapper over a decoration of `lim`.
+    pub(crate) fn decorated_operator(
+        text: String,
+        class: AtomClass,
+        limits: Limits,
+        decoration: OperatorDecoration,
+    ) -> Self {
+        Spelling {
+            text,
+            kind: SpellingKind::DecoratedOperator {
+                class,
+                limits,
+                decoration,
+            },
+        }
+    }
 }
 
 impl Spellings {

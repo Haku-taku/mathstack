@@ -334,6 +334,12 @@ pub enum NodeKind {
         body: NodeId,
         limits: Limits,
     },
+    /// A stretched arrow below its body (`\underrightarrow`): the body keeps
+    /// the baseline and the arrow hangs under it.
+    UnderArrow {
+        symbol: char,
+        body: NodeId,
+    },
     /// A matrix-style table: rows of cells sharing column widths.
     Table {
         rows: Vec<NodeId>,
@@ -462,7 +468,8 @@ impl NodeKind {
             | NodeKind::Boxed { body }
             | NodeKind::Cancel { body, .. }
             | NodeKind::Styled { body, .. }
-            | NodeKind::Class { body, .. } => vec![ChildSlot {
+            | NodeKind::Class { body, .. }
+            | NodeKind::UnderArrow { body, .. } => vec![ChildSlot {
                 slot: if matches!(self, NodeKind::Accent { .. }) {
                     Slot::Base
                 } else {
@@ -642,6 +649,10 @@ impl NodeKind {
                 class: *class,
                 body: map(*body),
                 limits: *limits,
+            },
+            NodeKind::UnderArrow { symbol, body } => NodeKind::UnderArrow {
+                symbol: *symbol,
+                body: map(*body),
             },
             NodeKind::Table {
                 rows,
@@ -1027,7 +1038,8 @@ impl Model {
             | NodeKind::Cancel { body, .. }
             | NodeKind::HorizontalBrace { body, .. }
             | NodeKind::Styled { body, .. }
-            | NodeKind::Class { body, .. } => match slot {
+            | NodeKind::Class { body, .. }
+            | NodeKind::UnderArrow { body, .. } => match slot {
                 Slot::Body => Some(std::mem::replace(body, child)),
                 _ => return Err(EditError::SlotNotEditable),
             },

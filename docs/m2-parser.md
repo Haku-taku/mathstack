@@ -31,13 +31,16 @@ command    := '\frac' argument argument
   symbol tables do.
 - Direct Unicode input (`α`, `∑`, `≤`) is a symbol atom too; `∑` typed directly
   is an `Atom` of class Op, not a `LargeOp`, because no `\sum` command was seen.
-- `\limits` and `\nolimits` are postfix: they follow an operator before any
-  script. TeX's `\displaylimits` is not accepted.
+- `\limits`, `\nolimits` and `\displaylimits` are postfix: they follow an
+  operator before any script. `\displaylimits` selects display placement; it
+  does not restore the operator's table default. After another class it is a
+  diagnostic.
 - Named operators come from one table: `\arg` and `\ker` are side-placed,
   `\argmin` and `\injlim` follow `\operatorname*`, and `\plim` is above/below
-  in every style because `\limits` is part of its definition.
-  `\varliminf`, `\varlimsup`, `\varinjlim` and `\varprojlim` are not accepted:
-  each decorates `lim`, which a `Function`'s name string cannot express.
+  in every style because `\limits` is part of its definition. `\varliminf`,
+  `\varlimsup`, `\varinjlim` and `\varprojlim` expand as amsmath does: a
+  decorated `lim` (`Underline`, `Overline`, or `UnderArrow`) inside an `Op`
+  class, so display limits still see an operator.
 
 ## Mapping to the model
 

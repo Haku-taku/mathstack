@@ -3,7 +3,7 @@
 //! to work with.
 
 use crate::lexer::{Token, TokenKind};
-use crate::spellings::{Spelling, Spellings};
+use crate::spellings::{OperatorDecoration, Spelling, Spellings};
 use crate::symbols;
 use math_core::{
     Alignment, Atom, AtomClass, ColumnSpacing, Diagnostic, FractionRule, Length, LengthUnit,
@@ -381,16 +381,23 @@ impl Parser<'_> {
     fn parse_limits_suffix(&mut self, base: NodeId) {
         loop {
             let name = match self.peek().map(|token| &token.kind) {
-                Some(TokenKind::Command(name)) if name == "limits" || name == "nolimits" => {
+                Some(TokenKind::Command(name))
+                    if matches!(name.as_str(), "limits" | "nolimits" | "displaylimits") =>
+                {
                     name.clone()
                 }
                 _ => break,
             };
             let span = self.advance().expect("peeked a command").span;
-            let limits = if name == "limits" {
-                Limits::AboveBelow
-            } else {
-                Limits::Beside
+            let limits = match name.as_str() {
+                "limits" => Limits::AboveBelow,
+                "nolimits" => Limits::Beside,
+                // `\displaylimits` is TeX's display-limit switch, not a
+                // restore-the-table-default: it makes any Op above/below in
+                // display style.
+                _ => Limits::Default {
+                    display_limits: true,
+                },
             };
             let kind = match self.model.kind(base) {
                 NodeKind::LargeOp { symbol, .. } => NodeKind::LargeOp {
@@ -425,6 +432,63 @@ impl Parser<'_> {
                 self.record_spelling(base, token, Origin::Source);
             }
         }
+    }
+
+    /// `\varlimsup` and its three siblings: the same `\operatorname*{lim}`
+    /// their KaTeX macros spell, decorated by a bar or an under-arrow. The
+    /// command stays as a spelling so the document writes it back by name.
+    fn parse_decorated_lim(&mut self, name: &str, span: Span) -> NodeId {
+        let limits = Limits::Default {
+            display_limits: false,
+        };
+        let function = self.make(
+            NodeKind::Function {
+                name: "lim".to_owned(),
+                limits,
+            },
+            span,
+        );
+        let (decorated, decoration) = match name {
+            "varlimsup" => (
+                NodeKind::Overline { body: function },
+                OperatorDecoration::Overline,
+            ),
+            "varliminf" => (
+                NodeKind::Underline { body: function },
+                OperatorDecoration::Underline,
+            ),
+            "varinjlim" => (
+                NodeKind::UnderArrow {
+                    symbol: '\u{2192}',
+                    body: function,
+                },
+                OperatorDecoration::UnderArrow('\u{2192}'),
+            ),
+            _ => (
+                NodeKind::UnderArrow {
+                    symbol: '\u{2190}',
+                    body: function,
+                },
+                OperatorDecoration::UnderArrow('\u{2190}'),
+            ),
+        };
+        let limits = Limits::Default {
+            display_limits: true,
+        };
+        let body = self.make(decorated, span);
+        let node = self.make(
+            NodeKind::Class {
+                class: AtomClass::Op,
+                body,
+                limits,
+            },
+            span,
+        );
+        self.spellings.insert(
+            node,
+            Spelling::decorated_operator(format!("\\{name}"), AtomClass::Op, limits, decoration),
+        );
+        node
     }
 
     fn next_script(&self) -> Option<bool> {
@@ -827,6 +891,24 @@ impl Parser<'_> {
                 let body = self.parse_argument(depth + 1, "\\boxed");
                 let end = self.span_of(body).end.max(span.end);
                 self.make(NodeKind::Boxed { body }, Span::new(span.start, end))
+            }
+            "varlimsup" | "varliminf" | "varinjlim" | "varprojlim" => {
+                self.advance();
+                self.parse_decorated_lim(name, span)
+            }
+            "underrightarrow" | "underleftarrow" => {
+                self.advance();
+                let body = self.parse_argument(depth + 1, &format!("\\{name}"));
+                let end = self.span_of(body).end.max(span.end);
+                let symbol = if name == "underrightarrow" {
+                    '\u{2192}'
+                } else {
+                    '\u{2190}'
+                };
+                self.make(
+                    NodeKind::UnderArrow { symbol, body },
+                    Span::new(span.start, end),
+                )
             }
             "mathord" | "mathop" | "mathbin" | "mathrel" | "mathopen" | "mathclose"
             | "mathpunct" | "mathinner" => {

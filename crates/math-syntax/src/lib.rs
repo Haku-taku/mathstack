@@ -86,7 +86,8 @@ fn contains_error(model: &Model, id: NodeId) -> bool {
         | NodeKind::Boxed { body }
         | NodeKind::Cancel { body, .. }
         | NodeKind::Styled { body, .. }
-        | NodeKind::Class { body, .. } => contains_error(model, *body),
+        | NodeKind::Class { body, .. }
+        | NodeKind::UnderArrow { body, .. } => contains_error(model, *body),
         NodeKind::Arrow { over, under, .. } => {
             over.is_some_and(|over| contains_error(model, over))
                 || under.is_some_and(|under| contains_error(model, under))

@@ -197,6 +197,11 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
             write_dump(model, *body, out);
             out.push(')');
         }
+        NodeKind::UnderArrow { symbol, body } => {
+            out.push_str(&format!("UnderArrow({symbol:?},"));
+            write_dump(model, *body, out);
+            out.push(')');
+        }
         NodeKind::Error(text) => out.push_str(&format!("Error({text:?})")),
     }
 }
@@ -510,6 +515,16 @@ fn writer_round_trips_the_grammar() {
         "\\mathop{f}\\nolimits_x",
         "a\\mathbin{+}b",
         "\\mathrel{x}\\mathord{y}",
+        "\\varlimsup_{x}",
+        "\\varliminf_{x}",
+        "\\varinjlim_{i}",
+        "\\varprojlim_{i}",
+        "\\underrightarrow{abc}",
+        "\\underleftarrow{abc}",
+        "\\operatorname{lim}\\displaylimits_x",
+        "\\operatorname*{lim}\\displaylimits_x",
+        "\\sum\\displaylimits_x",
+        "\\int\\displaylimits_0^1",
         "\\stackrel{!}{=}",
         "\\substack{0<i<n\\\\i\\ne 1}",
         "\\cfrac{1}{1+\\cfrac{1}{x}}",
@@ -1364,4 +1379,129 @@ fn class_wrappers_keep_their_class_and_limits() {
         };
         assert_eq!(*class, expected, "{source}");
     }
+}
+
+#[test]
+fn varlim_commands_are_display_limit_operators() {
+    for (source, left_arrow) in [
+        ("\\varlimsup_{x}", None),
+        ("\\varliminf_{x}", None),
+        ("\\varinjlim_{i}", Some('\u{2192}')),
+        ("\\varprojlim_{i}", Some('\u{2190}')),
+    ] {
+        let document = parse(source);
+        let NodeKind::Scripts { base, .. } = document
+            .model
+            .kind(row(&document.model, document.root())[0])
+        else {
+            panic!("expected scripts on {source}");
+        };
+        let NodeKind::Class {
+            class,
+            body,
+            limits,
+        } = document.model.kind(*base)
+        else {
+            panic!("expected the operator wrapper on {source}");
+        };
+        assert_eq!(*class, AtomClass::Op, "{source}");
+        assert_eq!(
+            *limits,
+            Limits::Default {
+                display_limits: true
+            },
+            "{source} takes limits in display style"
+        );
+        let inner = match (left_arrow, document.model.kind(*body)) {
+            (None, NodeKind::Overline { body }) if source.starts_with("\\varlimsup") => *body,
+            (None, NodeKind::Underline { body }) if source.starts_with("\\varliminf") => *body,
+            (Some(expected), NodeKind::UnderArrow { symbol, body }) if *symbol == expected => *body,
+            (_, other) => panic!("unexpected decoration for {source}: {other:?}"),
+        };
+        assert!(
+            matches!(document.model.kind(inner), NodeKind::Function { name, .. } if name == "lim"),
+            "{source} decorates `lim`"
+        );
+        let command = source.split('_').next().expect("a command");
+        assert!(
+            document.to_latex().starts_with(command),
+            "the writer keeps the command name for {source}"
+        );
+    }
+}
+
+#[test]
+fn displaylimits_selects_the_display_placement() {
+    // `\operatorname{lim}` sets side scripts; the switch turns limits on.
+    let document = parse("\\operatorname{lim}\\displaylimits_x");
+    let NodeKind::Scripts { base, .. } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected scripts");
+    };
+    assert!(
+        matches!(
+            document.model.kind(*base),
+            NodeKind::Function {
+                limits: Limits::Default {
+                    display_limits: true
+                },
+                ..
+            }
+        ),
+        "`\\displaylimits` overrides `\\operatorname`'s side default"
+    );
+
+    // `\sum` and `\operatorname*` already take display limits: unchanged.
+    for source in [
+        "\\sum\\displaylimits_x",
+        "\\operatorname*{lim}\\displaylimits_x",
+    ] {
+        let document = parse(source);
+        let NodeKind::Scripts { base, .. } = document
+            .model
+            .kind(row(&document.model, document.root())[0])
+        else {
+            panic!("expected scripts for {source}");
+        };
+        let limits = match document.model.kind(*base) {
+            NodeKind::LargeOp { limits, .. } | NodeKind::Function { limits, .. } => *limits,
+            other => panic!("unexpected base for {source}: {other:?}"),
+        };
+        assert_eq!(
+            limits,
+            Limits::Default {
+                display_limits: true
+            },
+            "{source}"
+        );
+    }
+
+    // An integral's table default is side scripts; the switch overrides it,
+    // and the canonical form has to keep the switch.
+    let document = parse("\\int\\displaylimits_0^1");
+    let NodeKind::Scripts { base, .. } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected scripts");
+    };
+    assert!(matches!(
+        document.model.kind(*base),
+        NodeKind::LargeOp {
+            limits: Limits::Default {
+                display_limits: true
+            },
+            ..
+        }
+    ));
+    assert!(
+        to_latex(&document.model, document.root()).contains("\\displaylimits"),
+        "an override of the operator's own default must survive the writer"
+    );
+
+    // A switch that repeats the default is normalized away.
+    let document = parse("\\sum\\displaylimits_x");
+    assert!(!to_latex(&document.model, document.root()).contains("\\displaylimits"));
 }

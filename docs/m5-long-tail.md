@@ -125,6 +125,46 @@ so the suffix is a diagnostic after them. The writer prints the command, the
 argument and, for an `Op`, the non-default suffix, so the canonical form keeps
 an explicit class.
 
+## Decorated operators and `\displaylimits`
+
+`\varlimsup`, `\varliminf`, `\varinjlim` and `\varprojlim` are amsmath's
+decorated `lim`; KaTeX expands them to `\operatorname*{\overline{lim}}`,
+`\operatorname*{\underline{lim}}`, `\operatorname*{\underrightarrow{lim}}` and
+`\operatorname*{\underleftarrow{lim}}`. The parser builds that same tree: a
+`Function { name: "lim", limits }` under the decoration, wrapped in
+`Class { class: Op, … }`, so limit placement and atom spacing still see an
+operator. The model gained `UnderArrow { symbol, body }` for the two arrow
+forms.
+
+The arrow is not `Arrow`. An `Arrow` is a relation whose labels sit above and
+below a stretched arrow, and it is at least one em wide; a varlim's arrow hangs
+below a full-size `lim`, adds only descent, and the wrapper supplies the
+operator class. Reusing `Arrow` would have made `\varinjlim` a relation and
+lifted `lim` off the baseline, so `UnderArrow` stretches the arrow across the
+body, clears it by the bar gap, and centres it under a body laid out at full
+size.
+
+`Document::to_latex` prints the written command back through the
+`DecoratedOperator` spelling, which re-checks the wrapper class, the limits and
+the whole decorated body before using the name, so an edit that moves one of
+them falls back to canonical output instead of keeping a stale name. Canonical
+output writes the expanded form, `\mathop{\overline{\operatorname{lim}}}_{x}`,
+which re-parses to the same tree.
+
+`\displaylimits` is the postfix that selects display placement; it is not
+"restore the operator's table default". On a large operator, a named function
+or a `Class` of class `Op` it sets `Default { display_limits: true }`, so
+`\operatorname{lim}\displaylimits` stacks its scripts in display style while
+`\operatorname*{lim}` and `\sum` are unchanged. After any other class the
+suffix is a diagnostic. The writer omits it where the operator's own default is
+already display limits (`\sum\displaylimits` prints `\sum`) and keeps it where
+the default is side placement (`\int\displaylimits`), since only the latter
+would change meaning. `\limits` and `\nolimits` still override either way.
+
+A named function's recorded spelling is reused only when it reproduces the
+recorded placement without a suffix; `\operatorname{lim}\displaylimits`
+therefore writes `\lim`, while `\operatorname*{lim}` stays itself.
+
 ## Lengths and `\hspace`
 
 `\hspace` needs a width in a unit, so the model gained:
@@ -208,7 +248,9 @@ or brace glyph.
   custom, script style, delimiter pair), both arrows with and without an under
   label, both braces, `\cancel`/`\bcancel`/`\xcancel`, three `\hspace` lengths,
   `array` with a mixed preamble, `array{|c|c|}`, a rules-free `array`,
-  `subarray`, and both `alignat` spellings.
+  `subarray`, and both `alignat` spellings; the four varlim commands, both
+  under-arrows, and `\displaylimits` after `\operatorname`, `\operatorname*`,
+  `\sum` and `\int`.
 - `table_boundaries_carry_rules_and_flush_spacing` pins the three rule
   positions, thickness and full-height span of a `|c|c|`-shaped table, and that
   flush columns sit at zero gap; ignoring the rule width or the spacing flag
@@ -228,6 +270,15 @@ or brace glyph.
 - `mathop_takes_limits_in_display_style` lays `\mathop{f}_x` at both styles:
   the subscript is centred below in display style and beside in text style;
   dropping the wrapper arm in `takes_limits` fails it.
+- `varlim_commands_are_display_limit_operators` pins each command's `Op` class,
+  display limits, decoration and `lim` body; dropping the class or the limits
+  fails it.
+- `displaylimits_selects_the_display_placement` pins that the suffix turns a
+  side-placed `\operatorname` into display limits while `\sum` and
+  `\operatorname*` stay unchanged.
+- `display_limits_stack_a_function_under_it` lays a display-limited function
+  and the varlim shape at both styles: the subscript stacks in display style;
+  removing the `Function` arm in `takes_limits` fails it.
 - `hspace_resolves_em_ex_and_mu_units` pins the three unit conversions and a
   negative length; changing the `mu` scale makes it fail.
 - `cancel_draws_one_diagonal_per_direction` pins the single-line and both-line
@@ -284,3 +335,24 @@ edits, `Origin::Macro` and the `Composition` node are in
   `\mathop{…}_x` in display style is expected above and below; the wrapper
   therefore starts with `Default { display_limits: true }`, and
   `mathop_takes_limits_in_display_style` pins the placement.
+- **`\underrightarrow` cannot reuse `Arrow`.** `Arrow` is a relation whose
+  labels surround a stretched arrow and whose arrow is at least one em; a varlim
+  is an ordinary full-size `lim` with a stretchy arrow below it. Mapping the
+  command onto `Arrow` would have made the operator a relation and moved `lim`
+  off the baseline, which no later writer pass can undo. `UnderArrow` states
+  the vertical order directly, and
+  `varlim_commands_are_display_limit_operators` fails if the decoration is
+  anything else.
+- **`\displaylimits` is not "reset to the operator's table default".** It
+  selects display placement, so on `\int` it must be written back: canonical
+  output that dropped every `Default { true }` suffix read back as side scripts.
+  The writer compares against the operator's intrinsic default —
+  `\sum\displaylimits` prints `\sum`, `\int\displaylimits` keeps the
+  suffix — and the round-trip corpus contains both, so losing either half
+  fails.
+- **A spelling can outlive the placement it named.** Keeping the recorded
+  `\operatorname{lim}` text for `\operatorname{lim}\displaylimits` printed a
+  source that parses back with side scripts. The writer now re-derives the
+  spelling's placement (`spelled_function_limits`) and falls back to `\lim`
+  when it differs;
+  `displaylimits_selects_the_display_placement` and the corpus catch it.

@@ -307,6 +307,9 @@ fn layout_kind(
             layout_cancel(cx, *body, *up, *down, size, style, diagnostics)
         }
         NodeKind::Arrow { .. } => layout_arrow(cx, id, size, style, diagnostics),
+        NodeKind::UnderArrow { symbol, body } => {
+            layout_under_arrow(cx, *symbol, *body, span, size, style, diagnostics)
+        }
         NodeKind::HorizontalBrace { body, over } => {
             layout_horizontal_brace(cx, *body, *over, span, size, style, diagnostics)
         }
@@ -580,6 +583,7 @@ fn node_class(cx: &Cx<'_>, id: NodeId) -> AtomClass {
         | NodeKind::Hspace(_)
         | NodeKind::Overline { .. }
         | NodeKind::Underline { .. }
+        | NodeKind::UnderArrow { .. }
         | NodeKind::Middle { .. } => AtomClass::Ord,
         NodeKind::LargeOp { .. } | NodeKind::Function { .. } | NodeKind::HorizontalBrace { .. } => {
             AtomClass::Op
@@ -1869,6 +1873,60 @@ fn layout_arrow(
         let dx = (width - under.width) / 2.0;
         out.push_child(under, dx, shift, Slot::Under);
     }
+    out
+}
+
+/// `\underrightarrow` and `\underleftarrow`: a stretched arrow under a body
+/// that keeps the baseline, the way an underline hangs below it.
+fn layout_under_arrow(
+    cx: &Cx<'_>,
+    symbol: char,
+    body_node: NodeId,
+    span: Span,
+    size: f32,
+    style: Style,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> MathBox {
+    let em = style.em(cx.font, size);
+    let body = layout_node(cx, body_node, size, style, diagnostics);
+    let gap = 0.15 * em;
+    let mut width = body.width.max(em);
+
+    let Some(glyph) = cx.font.glyph(symbol) else {
+        diagnostics.push(Diagnostic::new(
+            span,
+            format!("font has no glyph for U+{:04X}", symbol as u32),
+        ));
+        let mut out = MathBox {
+            width,
+            ascent: body.ascent,
+            descent: body.descent,
+            ..MathBox::empty()
+        };
+        let dx = (width - body.width) / 2.0;
+        out.push_child(body, dx, 0.0, Slot::Body);
+        return out;
+    };
+    let stretched = cx.font.stretch_horizontal(glyph, width / em);
+    let (arrow_width, arrow_ascent, arrow_descent) = horizontal_metrics(cx, &stretched, em);
+    width = width.max(arrow_width);
+
+    let arrow_baseline = body.descent + gap + arrow_ascent;
+    let mut out = MathBox {
+        width,
+        ascent: body.ascent,
+        descent: arrow_baseline + arrow_descent,
+        ..MathBox::empty()
+    };
+    let dx = (width - body.width) / 2.0;
+    out.push_child(body, dx, 0.0, Slot::Body);
+    emit_stretched_horizontal(
+        &stretched,
+        (width - arrow_width) / 2.0,
+        arrow_baseline,
+        em,
+        &mut out.items,
+    );
     out
 }
 

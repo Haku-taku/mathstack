@@ -90,7 +90,7 @@ impl Output<'_> {
 
     fn spelling(&self, model: &Model, id: NodeId) -> Option<String> {
         let spelling = self.spellings.get(id)?;
-        if spelling.matches(model.kind(id)) {
+        if spelling.matches(model, id) {
             Some(spelling.text.clone())
         } else {
             None
@@ -217,7 +217,7 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                     None => write_symbol(*symbol, out),
                 },
             }
-            write_limits_suffix(*limits, out);
+            write_operator_limits(*symbol, *limits, out);
         }
         NodeKind::Accent { base, symbol } => {
             // Parsed accents always have a command; an API-built mark without
@@ -244,17 +244,13 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
         },
         NodeKind::Function { name, limits } => {
             match out.spelling(model, id) {
-                Some(text) => {
+                // The spelling is used only when it parses to this placement
+                // on its own; `\operatorname{lim}\displaylimits` must fall
+                // back to `\operatorname*{lim}` instead.
+                Some(text) if spelled_function_limits(&text, name) == Some(*limits) => {
                     out.push_token(&text);
-                    // A command such as `\plim` already spells its placement;
-                    // only an overriding suffix needs writing.
-                    if symbols::function_command(name).map(|(_, intrinsic)| intrinsic)
-                        != Some(*limits)
-                    {
-                        write_limits_suffix(*limits, out);
-                    }
                 }
-                None => match symbols::function_command(name) {
+                _ => match symbols::function_command(name) {
                     // A named command can carry an explicit suffix, but not a
                     // different display default: only the intrinsic placement
                     // is spelled by the command itself.
@@ -371,11 +367,26 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             body,
             limits,
         } => {
-            push_command(out, class_name(*class));
-            write_argument(model, *body, out);
+            match out.spelling(model, id) {
+                Some(text) => out.push_token(&text),
+                None => {
+                    push_command(out, class_name(*class));
+                    write_argument(model, *body, out);
+                }
+            }
             if *class == AtomClass::Op {
                 write_limits_suffix(*limits, out);
             }
+        }
+        NodeKind::UnderArrow { symbol, body } => {
+            push_command(
+                out,
+                match symbol {
+                    '\u{2190}' => "underleftarrow",
+                    _ => "underrightarrow",
+                },
+            );
+            write_argument(model, *body, out);
         }
         NodeKind::Arrow {
             symbol,
@@ -509,6 +520,39 @@ fn write_limits_suffix(limits: Limits, out: &mut Output<'_>) {
         Limits::Default { .. } => {}
         Limits::AboveBelow => push_command(out, "limits"),
         Limits::Beside => push_command(out, "nolimits"),
+    }
+}
+
+/// The placement a function spelling parses to without a suffix.
+fn spelled_function_limits(text: &str, name: &str) -> Option<Limits> {
+    let text = text.trim();
+    if let Some(rest) = text.strip_prefix("\\operatorname") {
+        return Some(Limits::Default {
+            display_limits: rest.starts_with('*'),
+        });
+    }
+    symbols::function_command(name).map(|(_, intrinsic)| intrinsic)
+}
+
+/// A large operator's limit switch. `\displaylimits` names the display default,
+/// so it is written only when the operator's table default differs; writing it
+/// for every display-limited operator would be noise.
+fn write_operator_limits(symbol: char, limits: Limits, out: &mut Output<'_>) {
+    let intrinsic = symbols::large_op_command(symbol)
+        .and_then(symbols::large_op)
+        .map(|(_, display_limits)| Limits::Default { display_limits });
+    match limits {
+        Limits::Default { display_limits } if intrinsic != Some(limits) => {
+            push_command(
+                out,
+                if display_limits {
+                    "displaylimits"
+                } else {
+                    "nolimits"
+                },
+            );
+        }
+        other => write_limits_suffix(other, out),
     }
 }
 
