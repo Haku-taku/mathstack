@@ -344,6 +344,22 @@ impl NodeKind {
         )
     }
 
+    /// Whether `slot` may be empty, so deleting its child removes the slot
+    /// itself; required slots keep an empty row for the caret.
+    pub fn slot_is_optional(&self, slot: Slot) -> bool {
+        matches!(
+            (self, slot),
+            (
+                NodeKind::Scripts { .. },
+                Slot::Superscript | Slot::Subscript
+            ) | (NodeKind::Radical { .. }, Slot::Degree)
+                | (
+                    NodeKind::OverUnder { .. } | NodeKind::Arrow { .. },
+                    Slot::Over | Slot::Under
+                )
+        )
+    }
+
     /// The node's children in reading order, each with its slot.
     pub fn children(&self) -> Vec<ChildSlot> {
         match self {

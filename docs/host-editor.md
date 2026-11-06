@@ -128,6 +128,14 @@ the slot will need. `Geometry::empty_slots` lists those cells and
 `Editor::placeholders` returns them as rectangles; the host only paints them.
 A static `layout` still measures an empty fraction as zero.
 
+An empty optional slot — a superscript, subscript, radical degree, or an
+`\overset`/arrow annotation — is removed as a unit: Backspace or Delete drops
+the slot and leaves the base, with the caret just after it. A required slot
+cannot lose its row, so Backspace at an empty numerator moves the caret to the
+slot's start and Delete moves it to its end; a further press leaves the
+structure. This stops a deletion at a slot boundary from walking into the
+base or the other required child.
+
 ## IME
 
 `set_preedit` inserts a `Composition` node at the caret and replaces its text as
@@ -267,6 +275,9 @@ host depends on:
 - `editing_a_table_cell_uses_the_hit_tested_row` — click to cell to typing;
 - `backspace_removes_an_empty_script_slot_and_then_the_script` — an empty
   optional slot is removed as a unit, then its wrapper;
+- `empty_slots_leave_without_deleting_their_base` — Backspace/Delete in an
+  empty script or degree keep the base, and a required empty slot moves the
+  caret out without clearing its sibling;
 - `copying_a_parsed_subtree_preserves_its_structure` — a broad formula
   round-trips after every node is copied; dropping one child in
   `NodeKind::map_children` makes it fail;
@@ -294,6 +305,14 @@ another key. This is a manual check, not a golden-image gate.
   a table's midpoint produced a caret after the table instead of inside its
   cell. When the containing child is on the other side of the boundary, the
   path now records that child's index; the table-cell editing test pins it.
+- **Backspace at an empty slot deleted its base.** Deletion walked geometry
+  stops and, when the caret sat at the start of an empty superscript, treated
+  the script's base atom as the previous child and cleared it, so `x^` plus
+  Backspace became `{}^{}`; an empty denominator trapped the caret entirely.
+  Deletion now asks `NodeKind::slot_is_optional`: an empty optional slot is
+  removed whole, while a required slot keeps its row and moves the caret to
+  the slot's boundary. Pinned by
+  `empty_slots_leave_without_deleting_their_base`.
 - **Backspace deleted the child before the previous boundary.** The first
   implementation read the previous stop's index, which names the child *before*
   that boundary; `ab` at the end therefore deleted `a`. Deletion now starts

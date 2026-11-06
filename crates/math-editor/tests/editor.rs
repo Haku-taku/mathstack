@@ -495,3 +495,44 @@ fn optional_brackets_fill_the_argument_and_drop_when_empty() {
     press(&mut arrow, Key::Character('x'));
     assert_eq!(arrow.source(), "\\xrightarrow [u]{x}");
 }
+
+#[test]
+fn empty_slots_leave_without_deleting_their_base() {
+    // An empty script slot is optional: Backspace removes it, not the base.
+    let mut superscript = editor("");
+    press(&mut superscript, Key::Character('x'));
+    press(&mut superscript, Key::Character('^'));
+    assert!(press(&mut superscript, Key::Backspace));
+    assert_eq!(superscript.source(), "x");
+    press(&mut superscript, Key::Character('y'));
+    assert_eq!(superscript.source(), "xy");
+
+    // Delete removes the same slot and leaves the caret after the base.
+    let mut forward = editor("");
+    press(&mut forward, Key::Character('x'));
+    press(&mut forward, Key::Character('^'));
+    assert!(press(&mut forward, Key::Delete));
+    assert_eq!(forward.source(), "x");
+    press(&mut forward, Key::Character('y'));
+    assert_eq!(forward.source(), "xy");
+
+    // A required slot keeps its empty row; Backspace leaves it without
+    // touching the fraction's other child.
+    let mut fraction = editor("");
+    press_command(&mut fraction, "frac");
+    press(&mut fraction, Key::Character(' '));
+    assert!(press(&mut fraction, Key::Backspace));
+    assert_eq!(fraction.source(), "\\frac {}{}");
+    assert!(!press(&mut fraction, Key::Backspace));
+    assert_eq!(fraction.source(), "\\frac {}{}");
+
+    // An empty degree is optional too; its content deletes first.
+    let mut radical = editor("\\sqrt[3]{x}");
+    for _ in 0..4 {
+        press(&mut radical, Key::Left);
+    }
+    assert!(press(&mut radical, Key::Backspace));
+    assert_eq!(radical.source(), "\\sqrt []{x}");
+    assert!(press(&mut radical, Key::Backspace));
+    assert_eq!(radical.source(), "\\sqrt {x}");
+}

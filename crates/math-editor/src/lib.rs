@@ -1557,6 +1557,36 @@ impl Editor {
             let Some(step) = self.caret.steps.last().copied() else {
                 return false;
             };
+            if step.index == 0 && !self.model.kind(step.node).slot_is_list(step.slot) {
+                let slot_is_optional = self.model.kind(step.node).slot_is_optional(step.slot);
+                let empty_child = self
+                    .slot_children(step.node, step.slot)
+                    .first()
+                    .copied()
+                    .filter(|child| is_empty_row(self.model.kind(*child)));
+                if slot_is_optional
+                    && let Some(child) = empty_child
+                    && self.remove_node(child).is_ok()
+                {
+                    self.caret = self
+                        .caret_after_node(step.node)
+                        .unwrap_or_else(|| self.caret.clone());
+                    self.anchor = None;
+                    self.collapse_redundant_rows();
+                    self.relayout(font);
+                    return true;
+                }
+                // The caret is at the start of a single slot: leave the slot
+                // rather than deleting the base it is attached to.
+                if position > 0
+                    && let Some(previous) = self.stop_path(position - 1)
+                {
+                    self.caret = previous;
+                    self.anchor = None;
+                    return true;
+                }
+                return false;
+            }
             if step.index > 0 {
                 let children = self.slot_children(step.node, step.slot);
                 if let Some(candidate) = children.get(step.index - 1).copied() {
@@ -1568,14 +1598,20 @@ impl Editor {
                             }
                             self.caret = caret;
                         } else if is_empty_row(self.model.kind(candidate)) {
-                            // An empty optional slot is removable as a whole;
-                            // a required one has nothing left to clear.
-                            if self.remove_node(candidate).is_err() {
-                                return false;
+                            if self.model.kind(step.node).slot_is_optional(step.slot) {
+                                if self.remove_node(candidate).is_err() {
+                                    return false;
+                                }
+                                self.caret = self
+                                    .caret_after_node(step.node)
+                                    .unwrap_or_else(|| self.caret.clone());
+                            } else {
+                                // A required slot keeps its empty row; step to
+                                // the slot's start so the next press exits it.
+                                self.caret = self
+                                    .boundary_path(step.node, step.slot, 0)
+                                    .unwrap_or_else(|| self.caret.clone());
                             }
-                            self.caret = self
-                                .caret_after_node(step.node)
-                                .unwrap_or_else(|| self.caret.clone());
                         } else if !self.clear_single_slot(candidate) {
                             return false;
                         }
@@ -1615,12 +1651,21 @@ impl Editor {
                     if self.remove_leaf(candidate, step.node, step.slot) {
                         // The caret boundary is now before the next child.
                     } else if is_empty_row(self.model.kind(candidate)) {
-                        if self.remove_node(candidate).is_err() {
-                            return false;
+                        let optional = self.model.kind(step.node).slot_is_optional(step.slot);
+                        if optional {
+                            if self.remove_node(candidate).is_err() {
+                                return false;
+                            }
+                            self.caret = self
+                                .caret_after_node(step.node)
+                                .unwrap_or_else(|| self.caret.clone());
+                        } else {
+                            // Nothing to remove inside a required empty slot;
+                            // step past it so Delete can leave the structure.
+                            self.caret = self
+                                .boundary_path(step.node, step.slot, 1)
+                                .unwrap_or_else(|| self.caret.clone());
                         }
-                        self.caret = self
-                            .caret_before_node(step.node)
-                            .unwrap_or_else(|| self.caret.clone());
                     } else if !self.clear_single_slot(candidate) {
                         return false;
                     }
