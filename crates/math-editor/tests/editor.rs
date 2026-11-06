@@ -565,3 +565,24 @@ fn a_cut_environment_keeps_its_name() {
     assert!(editor.insert_latex(&copied, &FakeFont));
     assert_eq!(editor.source(), exported);
 }
+
+#[test]
+fn class_commands_enter_an_editable_argument() {
+    let mut editor = editor("");
+    press_command(&mut editor, "mathop");
+    press(&mut editor, Key::Character(' '));
+    assert_eq!(editor.source(), "\\mathop {}");
+    press(&mut editor, Key::Character('f'));
+    assert_eq!(editor.source(), "\\mathop {f}");
+    let root = editor.model().root();
+    let NodeKind::Row(children) = editor.model().kind(root) else {
+        panic!("expected a row");
+    };
+    assert!(matches!(
+        editor.model().kind(children[0]),
+        NodeKind::Class {
+            class: math_core::AtomClass::Op,
+            ..
+        }
+    ));
+}

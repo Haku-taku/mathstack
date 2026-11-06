@@ -54,6 +54,8 @@ pub fn command_shape(name: &str) -> CommandShape {
         "not" => CommandShape::SymbolArgument,
         "mod" | "pod" => CommandShape::MathArgument,
         "left" | "right" | "middle" => CommandShape::Delimiter,
+        "mathord" | "mathop" | "mathbin" | "mathrel" | "mathopen" | "mathclose" | "mathpunct"
+        | "mathinner" => CommandShape::MathArgument,
         "overline" | "underline" | "phantom" | "hphantom" | "vphantom" | "cancel" | "bcancel"
         | "xcancel" | "boxed" | "overbrace" | "underbrace" => CommandShape::MathArgument,
         _ => {
