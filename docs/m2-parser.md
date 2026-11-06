@@ -33,6 +33,11 @@ command    := '\frac' argument argument
   is an `Atom` of class Op, not a `LargeOp`, because no `\sum` command was seen.
 - `\limits` and `\nolimits` are postfix: they follow an operator before any
   script. TeX's `\displaylimits` is not accepted.
+- Named operators come from one table: `\arg` and `\ker` are side-placed,
+  `\argmin` and `\injlim` follow `\operatorname*`, and `\plim` is above/below
+  in every style because `\limits` is part of its definition.
+  `\varliminf`, `\varlimsup`, `\varinjlim` and `\varprojlim` are not accepted:
+  each decorates `lim`, which a `Function`'s name string cannot express.
 
 ## Mapping to the model
 
@@ -45,7 +50,10 @@ command    := '\frac' argument argument
 | `\sqrt` | `Radical` |
 | `\left…\right` | `Delimited` |
 | `\sum`, `\int`, … | `LargeOp { symbol, limits: Limits }` |
+| `\sin`, `\lim`, `\argmax`, … | `Function { name, limits: Limits }` |
+| `\operatorname*` / `\operatornamewithlimits` | `Function` with `Default { display_limits: true }` |
 | `\limits` / `\nolimits` after an operator | `Limits::AboveBelow` / `Beside` |
+| `\mod{x}` / `\pod{x}` | a spacing row, like `\bmod` / `\pmod` |
 | `\binom`, `\dbinom`, `\tbinom` | `Delimited` around a ruleless `Fraction` |
 | unknown command | `Error(raw)` plus a diagnostic |
 

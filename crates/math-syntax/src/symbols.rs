@@ -156,81 +156,107 @@ pub(crate) fn sized_delimiter_command(
     Some(command)
 }
 
+/// The two table defaults. An explicit `\limits` or `\nolimits` is a suffix,
+/// so it never appears here.
+const SIDE_DEFAULT: Limits = Limits::Default {
+    display_limits: false,
+};
+const DISPLAY_DEFAULT: Limits = Limits::Default {
+    display_limits: true,
+};
+
 /// A named operator: its displayed text (TeX's `\limsup` prints "lim sup")
-/// and whether display style puts limits under it.
-pub(crate) fn function(name: &str) -> Option<(&'static str, bool)> {
+/// and its intrinsic placement. `\injlim` is amsmath's `\operatorname*`,
+/// while `\plim` carries `\limits` itself and is above/below in every style.
+pub(crate) fn function(name: &str) -> Option<(&'static str, Limits)> {
     let function = match name {
-        "sin" => ("sin", false),
-        "cos" => ("cos", false),
-        "tan" => ("tan", false),
-        "cot" => ("cot", false),
-        "sec" => ("sec", false),
-        "csc" => ("csc", false),
-        "arcsin" => ("arcsin", false),
-        "arccos" => ("arccos", false),
-        "arctan" => ("arctan", false),
-        "sinh" => ("sinh", false),
-        "cosh" => ("cosh", false),
-        "tanh" => ("tanh", false),
-        "coth" => ("coth", false),
-        "log" => ("log", false),
-        "ln" => ("ln", false),
-        "lg" => ("lg", false),
-        "exp" => ("exp", false),
-        "lim" => ("lim", true),
-        "limsup" => ("lim sup", true),
-        "liminf" => ("lim inf", true),
-        "max" => ("max", true),
-        "min" => ("min", true),
-        "sup" => ("sup", true),
-        "inf" => ("inf", true),
-        "det" => ("det", true),
-        "gcd" => ("gcd", true),
-        "Pr" => ("Pr", true),
+        "sin" => ("sin", SIDE_DEFAULT),
+        "cos" => ("cos", SIDE_DEFAULT),
+        "tan" => ("tan", SIDE_DEFAULT),
+        "cot" => ("cot", SIDE_DEFAULT),
+        "sec" => ("sec", SIDE_DEFAULT),
+        "csc" => ("csc", SIDE_DEFAULT),
+        "arcsin" => ("arcsin", SIDE_DEFAULT),
+        "arccos" => ("arccos", SIDE_DEFAULT),
+        "arctan" => ("arctan", SIDE_DEFAULT),
+        "arg" => ("arg", SIDE_DEFAULT),
+        "sinh" => ("sinh", SIDE_DEFAULT),
+        "cosh" => ("cosh", SIDE_DEFAULT),
+        "tanh" => ("tanh", SIDE_DEFAULT),
+        "coth" => ("coth", SIDE_DEFAULT),
+        "log" => ("log", SIDE_DEFAULT),
+        "ln" => ("ln", SIDE_DEFAULT),
+        "lg" => ("lg", SIDE_DEFAULT),
+        "exp" => ("exp", SIDE_DEFAULT),
+        "deg" => ("deg", SIDE_DEFAULT),
+        "dim" => ("dim", SIDE_DEFAULT),
+        "hom" => ("hom", SIDE_DEFAULT),
+        "ker" => ("ker", SIDE_DEFAULT),
+        "lim" => ("lim", DISPLAY_DEFAULT),
+        "limsup" => ("lim sup", DISPLAY_DEFAULT),
+        "liminf" => ("lim inf", DISPLAY_DEFAULT),
+        "argmax" => ("arg max", DISPLAY_DEFAULT),
+        "argmin" => ("arg min", DISPLAY_DEFAULT),
+        "injlim" => ("inj lim", DISPLAY_DEFAULT),
+        "projlim" => ("proj lim", DISPLAY_DEFAULT),
+        "max" => ("max", DISPLAY_DEFAULT),
+        "min" => ("min", DISPLAY_DEFAULT),
+        "sup" => ("sup", DISPLAY_DEFAULT),
+        "inf" => ("inf", DISPLAY_DEFAULT),
+        "det" => ("det", DISPLAY_DEFAULT),
+        "gcd" => ("gcd", DISPLAY_DEFAULT),
+        "Pr" => ("Pr", DISPLAY_DEFAULT),
+        "plim" => ("plim", Limits::AboveBelow),
         _ => return None,
     };
     Some(function)
 }
 
-pub(crate) fn function_command(name: &str, limits: Limits) -> Option<&'static str> {
+/// The command and intrinsic placement a displayed operator name came from.
+/// A caller that attaches a different explicit placement writes it as a
+/// suffix; a different default placement cannot use the named command.
+pub(crate) fn function_command(name: &str) -> Option<(&'static str, Limits)> {
     let command = match name {
-        "sin" => "sin",
-        "cos" => "cos",
-        "tan" => "tan",
-        "cot" => "cot",
-        "sec" => "sec",
-        "csc" => "csc",
-        "arcsin" => "arcsin",
-        "arccos" => "arccos",
-        "arctan" => "arctan",
-        "sinh" => "sinh",
-        "cosh" => "cosh",
-        "tanh" => "tanh",
-        "coth" => "coth",
-        "log" => "log",
-        "ln" => "ln",
-        "lg" => "lg",
-        "exp" => "exp",
-        "lim" => "lim",
-        "lim sup" => "limsup",
-        "lim inf" => "liminf",
-        "max" => "max",
-        "min" => "min",
-        "sup" => "sup",
-        "inf" => "inf",
-        "det" => "det",
-        "gcd" => "gcd",
-        "Pr" => "Pr",
+        "sin" => ("sin", SIDE_DEFAULT),
+        "cos" => ("cos", SIDE_DEFAULT),
+        "tan" => ("tan", SIDE_DEFAULT),
+        "cot" => ("cot", SIDE_DEFAULT),
+        "sec" => ("sec", SIDE_DEFAULT),
+        "csc" => ("csc", SIDE_DEFAULT),
+        "arcsin" => ("arcsin", SIDE_DEFAULT),
+        "arccos" => ("arccos", SIDE_DEFAULT),
+        "arctan" => ("arctan", SIDE_DEFAULT),
+        "arg" => ("arg", SIDE_DEFAULT),
+        "sinh" => ("sinh", SIDE_DEFAULT),
+        "cosh" => ("cosh", SIDE_DEFAULT),
+        "tanh" => ("tanh", SIDE_DEFAULT),
+        "coth" => ("coth", SIDE_DEFAULT),
+        "log" => ("log", SIDE_DEFAULT),
+        "ln" => ("ln", SIDE_DEFAULT),
+        "lg" => ("lg", SIDE_DEFAULT),
+        "exp" => ("exp", SIDE_DEFAULT),
+        "deg" => ("deg", SIDE_DEFAULT),
+        "dim" => ("dim", SIDE_DEFAULT),
+        "hom" => ("hom", SIDE_DEFAULT),
+        "ker" => ("ker", SIDE_DEFAULT),
+        "lim" => ("lim", DISPLAY_DEFAULT),
+        "lim sup" => ("limsup", DISPLAY_DEFAULT),
+        "lim inf" => ("liminf", DISPLAY_DEFAULT),
+        "arg max" => ("argmax", DISPLAY_DEFAULT),
+        "arg min" => ("argmin", DISPLAY_DEFAULT),
+        "inj lim" => ("injlim", DISPLAY_DEFAULT),
+        "proj lim" => ("projlim", DISPLAY_DEFAULT),
+        "max" => ("max", DISPLAY_DEFAULT),
+        "min" => ("min", DISPLAY_DEFAULT),
+        "sup" => ("sup", DISPLAY_DEFAULT),
+        "inf" => ("inf", DISPLAY_DEFAULT),
+        "det" => ("det", DISPLAY_DEFAULT),
+        "gcd" => ("gcd", DISPLAY_DEFAULT),
+        "Pr" => ("Pr", DISPLAY_DEFAULT),
+        "plim" => ("plim", Limits::AboveBelow),
         _ => return None,
     };
-    let default_limits = matches!(
-        name,
-        "lim" | "lim sup" | "lim inf" | "max" | "min" | "sup" | "inf" | "det" | "gcd" | "Pr"
-    );
-    match limits {
-        Limits::Default { display_limits } => (display_limits == default_limits).then_some(command),
-        Limits::AboveBelow | Limits::Beside => Some(command),
-    }
+    Some(command)
 }
 
 pub(crate) fn variant_command(variant: Variant) -> Option<&'static str> {

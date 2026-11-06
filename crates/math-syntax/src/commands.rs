@@ -48,10 +48,11 @@ pub fn command_shape(name: &str) -> CommandShape {
         "sqrt" => CommandShape::OptionalMathArgument,
         "smash" => CommandShape::OptionalFlagArgument,
         "xrightarrow" | "xleftarrow" => CommandShape::OptionalUnderArgument,
-        "text" | "operatorname" => CommandShape::NameArgument,
+        "text" | "operatorname" | "operatornamewithlimits" => CommandShape::NameArgument,
         "hspace" => CommandShape::Length,
         "genfrac" | "substack" | "pmod" => CommandShape::Special,
         "not" => CommandShape::SymbolArgument,
+        "mod" | "pod" => CommandShape::MathArgument,
         "left" | "right" | "middle" => CommandShape::Delimiter,
         "overline" | "underline" | "phantom" | "hphantom" | "vphantom" | "cancel" | "bcancel"
         | "xcancel" | "boxed" | "overbrace" | "underbrace" => CommandShape::MathArgument,

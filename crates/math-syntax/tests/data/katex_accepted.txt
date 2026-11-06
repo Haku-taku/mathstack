@@ -39,6 +39,9 @@
 \arccos
 \arcsin
 \arctan
+\arg
+\argmax
+\argmin
 \ast
 \atop
 \backslash
@@ -92,9 +95,11 @@
 \ddot
 \ddots
 \def
+\deg
 \delta
 \det
 \dfrac
+\dim
 \div
 \dot
 \dots
@@ -123,6 +128,7 @@
 \grave
 \hat
 \hbar
+\hom
 \hphantom
 \hspace
 \iff
@@ -132,9 +138,11 @@
 \in
 \inf
 \infty
+\injlim
 \int
 \iota
 \kappa
+\ker
 \lambda
 \land
 \langle
@@ -171,6 +179,7 @@
 \mid
 \middle
 \min
+\mod
 \mp
 \mu
 \nabla
@@ -189,6 +198,7 @@
 \omicron
 \ominus
 \operatorname
+\operatornamewithlimits
 \oplus
 \oslash
 \otimes
@@ -202,10 +212,13 @@
 \phantom
 \phi
 \pi
+\plim
 \pm
 \pmod
+\pod
 \prime
 \prod
+\projlim
 \propto
 \psi
 \qquad

@@ -214,10 +214,29 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
         },
         NodeKind::Function { name, limits } => {
             match out.spelling(model, id) {
-                Some(text) => out.push_token(&text),
-                None => match symbols::function_command(name, *limits) {
-                    Some(command) => push_command(out, command),
-                    None => {
+                Some(text) => {
+                    out.push_token(&text);
+                    // A command such as `\plim` already spells its placement;
+                    // only an overriding suffix needs writing.
+                    if symbols::function_command(name).map(|(_, intrinsic)| intrinsic)
+                        != Some(*limits)
+                    {
+                        write_limits_suffix(*limits, out);
+                    }
+                }
+                None => match symbols::function_command(name) {
+                    // A named command can carry an explicit suffix, but not a
+                    // different display default: only the intrinsic placement
+                    // is spelled by the command itself.
+                    Some((command, intrinsic))
+                        if !matches!(*limits, Limits::Default { .. }) || *limits == intrinsic =>
+                    {
+                        push_command(out, command);
+                        if *limits != intrinsic {
+                            write_limits_suffix(*limits, out);
+                        }
+                    }
+                    _ => {
                         out.push_str("\\operatorname");
                         if matches!(
                             limits,
@@ -230,10 +249,10 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                         out.push('{');
                         out.push_str(name);
                         out.push('}');
+                        write_limits_suffix(*limits, out);
                     }
                 },
             }
-            write_limits_suffix(*limits, out);
         }
         NodeKind::Space(kind) => match out.spelling(model, id) {
             Some(text) => out.push_token(&text),

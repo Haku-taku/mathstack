@@ -481,6 +481,19 @@ fn writer_round_trips_the_grammar() {
         "\\overbrace{a+b}^{n}",
         "\\underbrace{a+b}_{n}",
         "a\\bmod b",
+        "a\\mod n",
+        "a\\pod{n}",
+        "\\arg x",
+        "\\ker A",
+        "\\dim V",
+        "\\deg p",
+        "\\hom(A,B)",
+        "\\argmin_{x}",
+        "\\argmax_{x}",
+        "\\injlim_{i}",
+        "\\projlim_{i}",
+        "\\plim_{n}",
+        "\\operatornamewithlimits{arg}_{x}",
         "\\cdots+\\vdots+\\ddots",
         "\\dotsc\\dotsb\\dotsm\\dotsi\\dotso",
     ];
@@ -541,6 +554,51 @@ fn operator_suffixes_select_the_limits_placement() {
             limits: Limits::Beside
         }
     ));
+}
+
+#[test]
+fn named_operator_tables_choose_the_placement() {
+    for (source, expected_name, expected_limits) in [
+        (
+            "\\arg",
+            "arg",
+            Limits::Default {
+                display_limits: false,
+            },
+        ),
+        (
+            "\\argmin",
+            "arg min",
+            Limits::Default {
+                display_limits: true,
+            },
+        ),
+        ("\\plim", "plim", Limits::AboveBelow),
+    ] {
+        let document = parse(source);
+        let NodeKind::Function { name, limits } = document
+            .model
+            .kind(row(&document.model, document.root())[0])
+        else {
+            panic!("expected a function for {source}");
+        };
+        assert_eq!(name.as_str(), expected_name);
+        assert_eq!(*limits, expected_limits);
+    }
+
+    // `\plim` is above/below in every style; the command says so itself.
+    let document = parse("\\plim_n");
+    assert_eq!(to_latex(&document.model, document.root()), "\\plim _{n}");
+}
+
+#[test]
+fn operatornamewithlimits_is_operatorname_star() {
+    let alias = parse("\\operatornamewithlimits{arg}_x");
+    let star = parse("\\operatorname*{arg}_x");
+    assert_eq!(
+        dump(&alias.model, alias.root()),
+        dump(&star.model, star.root())
+    );
 }
 
 #[test]
@@ -933,6 +991,12 @@ fn command_shapes_describe_what_the_parser_expects() {
         CommandShape::OptionalUnderArgument
     );
     assert_eq!(command_shape("operatorname"), CommandShape::NameArgument);
+    assert_eq!(
+        command_shape("operatornamewithlimits"),
+        CommandShape::NameArgument
+    );
+    assert_eq!(command_shape("mod"), CommandShape::MathArgument);
+    assert_eq!(command_template("pod").as_deref(), Some("\\pod{}"));
     assert_eq!(command_shape("begin"), CommandShape::Environment);
     assert_eq!(command_shape("hspace"), CommandShape::Length);
     assert_eq!(command_shape("not"), CommandShape::SymbolArgument);

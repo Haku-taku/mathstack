@@ -786,6 +786,28 @@ impl Parser<'_> {
                 let space = self.make(NodeKind::Space(SpaceKind::Quad), span);
                 self.make(NodeKind::Row(vec![space, open, gap, argument, close]), span)
             }
+            "pod" => {
+                self.advance();
+                let argument = self.parse_argument(depth + 1, "\\pod");
+                let end = self.span_of(argument).end.max(span.end);
+                let span = Span::new(span.start, end);
+                // amsmath sets a quad, then the argument in parentheses.
+                let open = self.make(NodeKind::Text("(".to_owned()), span);
+                let close = self.make(NodeKind::Text(")".to_owned()), span);
+                let space = self.make(NodeKind::Space(SpaceKind::Quad), span);
+                self.make(NodeKind::Row(vec![space, open, argument, close]), span)
+            }
+            "mod" => {
+                self.advance();
+                let argument = self.parse_argument(depth + 1, "\\mod");
+                let end = self.span_of(argument).end.max(span.end);
+                let span = Span::new(span.start, end);
+                // amsmath sets a quad, "mod", a thin space and the argument.
+                let space = self.make(NodeKind::Space(SpaceKind::Quad), span);
+                let text = self.make(NodeKind::Text("mod".to_owned()), span);
+                let gap = self.make(NodeKind::Space(SpaceKind::Thin), span);
+                self.make(NodeKind::Row(vec![space, text, gap, argument]), span)
+            }
             "bmod" => {
                 self.advance();
                 let left = self.make(NodeKind::Space(SpaceKind::Medium), span);
@@ -812,18 +834,18 @@ impl Parser<'_> {
                 self.advance();
                 self.parse_substack(span, depth)
             }
-            "operatorname" => {
+            "operatorname" | "operatornamewithlimits" => {
                 self.advance();
-                let limits = if matches!(
-                    self.peek().map(|token| &token.kind),
-                    Some(TokenKind::Symbol('*'))
-                ) {
+                let limits = name == "operatornamewithlimits"
+                    || matches!(
+                        self.peek().map(|token| &token.kind),
+                        Some(TokenKind::Symbol('*'))
+                    );
+                if limits && name == "operatorname" {
                     self.advance();
-                    true
-                } else {
-                    false
-                };
-                match self.text_argument("\\operatorname", span) {
+                }
+                let command = format!("\\{name}");
+                match self.text_argument(&command, span) {
                     TextArgument::Text(name, span) => self.make(
                         NodeKind::Function {
                             name,
@@ -831,9 +853,7 @@ impl Parser<'_> {
                         },
                         span,
                     ),
-                    TextArgument::Unavailable(span) => {
-                        self.make(NodeKind::Error("\\operatorname".to_owned()), span)
-                    }
+                    TextArgument::Unavailable(span) => self.make(NodeKind::Error(command), span),
                 }
             }
             "left" => {
@@ -915,7 +935,7 @@ impl Parser<'_> {
                     self.make(
                         NodeKind::Function {
                             name: display.to_owned(),
-                            limits: limits.into(),
+                            limits,
                         },
                         span,
                     )
