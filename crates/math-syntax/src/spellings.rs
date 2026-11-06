@@ -135,6 +135,9 @@ impl Spelling {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Spellings {
     entries: BTreeMap<NodeId, Spelling>,
+    /// The environment a table, its fenced wrapper, or an unwrapped
+    /// `equation` body was written as; the model only keeps its shape.
+    environments: BTreeMap<NodeId, String>,
 }
 
 impl Spellings {
@@ -146,15 +149,29 @@ impl Spellings {
         self.entries.insert(node, spelling);
     }
 
+    /// The environment name a node was parsed from, when the writer cannot
+    /// recover it from the node's shape.
+    pub fn environment(&self, node: NodeId) -> Option<&str> {
+        self.environments.get(&node).map(String::as_str)
+    }
+
+    pub fn set_environment(&mut self, node: NodeId, name: String) {
+        self.environments.insert(node, name);
+    }
+
     /// Copies `from`'s spelling to `to`, for moving a parsed subtree.
     pub fn copy(&mut self, from: NodeId, to: NodeId) {
         if let Some(spelling) = self.entries.get(&from).cloned() {
             self.entries.insert(to, spelling);
         }
+        if let Some(environment) = self.environments.get(&from).cloned() {
+            self.environments.insert(to, environment);
+        }
     }
 
     pub fn remove(&mut self, node: NodeId) {
         self.entries.remove(&node);
+        self.environments.remove(&node);
     }
 
     pub fn len(&self) -> usize {

@@ -36,13 +36,36 @@ each back exactly.
 fraction means for `\dfrac`; the writer therefore prints it as `\dfrac` and the
 round trip preserves the structure.
 
-## Aligned environments
+## Environments
 
 `aligned` (and `align`, `align*`, treated the same inside a formula) is a
 `Table` whose columns alternate right, left, right, …. Layout already places
 cells by `Alignment`, so the environment only sets the per-column list.
 The writer recognises that alternating list and prints `\begin{aligned}`, which
-is how the alignment survives a round trip.
+is how the alignment survives a round trip. `split` has the same table shape
+and is told apart only by its recorded name.
+
+`gather`, `gather*` and `gathered` are one centered column, which is a `Table`
+with no explicit alignment; layout centers a column by default. `equation` and
+`equation*` hold one formula, so the parser returns its row without a table.
+
+`cases`, `dcases`, `rcases` and `drcases` are a table whose columns are all
+left-aligned, wrapped in the brace its name selects: `cases` and `dcases` use a
+left brace, `rcases` a right one, `drcases` both. The table shape cannot say
+which name was written, so the parser records the environment name alongside
+the spellings and `Document::to_latex` writes it back.
+
+The mathtools `matrix*` family adds an optional `[l|c|r]` argument that applies
+to every column; the parser stores it in the table's per-column alignment, and
+the writer prints `\begin{matrix*}[l]` (or the fenced variant) when every column
+shares an alignment. A table with no alignment stays `matrix`, and alternating
+columns stay `aligned`.
+
+`smallmatrix` and the display cell style of `dcases`/`drcases` are not
+represented: `Table` has no cell-style field, so the parser cannot ask layout
+for script or display cells. `smallmatrix` is therefore not accepted yet;
+`dcases`/`drcases` parse and keep their names but render their cells in the
+surrounding style, like `cases`.
 
 ## Lengths and `\hspace`
 

@@ -84,6 +84,10 @@ impl Output<'_> {
         }
     }
 
+    fn environment(&self, id: NodeId) -> Option<&str> {
+        self.spellings.environment(id)
+    }
+
     fn spelling(&self, model: &Model, id: NodeId) -> Option<String> {
         let spelling = self.spellings.get(id)?;
         if spelling.matches(model.kind(id)) {
@@ -102,15 +106,30 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             None => write_atom(atom, out),
         },
         NodeKind::Row(children) => {
-            let braces = context == Context::Item;
-            if braces {
+            if let Some(name) = out.environment(id).map(str::to_owned) {
+                // An unwrapped `equation`: the model is just its formula.
+                push_command(out, "begin");
                 out.push('{');
-            }
-            for child in children {
-                write(model, *child, Context::Item, out);
-            }
-            if braces {
+                out.push_str(&name);
                 out.push('}');
+                for child in children {
+                    write(model, *child, Context::Item, out);
+                }
+                push_command(out, "end");
+                out.push('{');
+                out.push_str(&name);
+                out.push('}');
+            } else {
+                let braces = context == Context::Item;
+                if braces {
+                    out.push('{');
+                }
+                for child in children {
+                    write(model, *child, Context::Item, out);
+                }
+                if braces {
+                    out.push('}');
+                }
             }
         }
         NodeKind::Scripts { base, sup, sub } => {
@@ -163,7 +182,18 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             write_argument(model, *body, out);
         }
         NodeKind::Delimited { left, body, right } => {
-            if let Some(table) = cases_table(model, *body, *left, *right) {
+            let environment = out.environment(id).map(str::to_owned);
+            if let Some(name) = environment.as_deref()
+                && let Some(table) = table_in_body(model, *body)
+            {
+                let argument = environment_argument(name, model, table);
+                let (body_start, body_end) =
+                    write_environment_with_arg(model, table, name, argument, out);
+                // The fenced wrapper is spelled by the environment name, so
+                // its body and table would otherwise lose their spans.
+                out.spans.push((*body, Span::new(body_start, body_end)));
+                out.spans.push((table, Span::new(body_start, body_end)));
+            } else if let Some(table) = cases_table(model, *body, *left, *right) {
                 write_environment(model, table, "cases", out);
             } else if let Some((command, numerator, denominator)) =
                 binomial(model, *body, *left, *right)
@@ -376,12 +406,12 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
         NodeKind::Table {
             columns, alignment, ..
         } => {
-            let name = if aligned_columns(*columns, alignment) {
-                "aligned"
-            } else {
-                "matrix"
+            let environment = out.environment(id).map(str::to_owned);
+            let (name, argument) = match environment.as_deref() {
+                Some(name) => (name, environment_argument(name, model, id)),
+                None => inferred_environment(*columns, alignment),
             };
-            write_environment(model, id, name, out)
+            write_environment_with_arg(model, id, name, argument, out);
         }
         NodeKind::TableRow { cells } => {
             for (index, cell) in cells.iter().enumerate() {
@@ -511,23 +541,96 @@ fn aligned_columns(columns: usize, alignment: &[Alignment]) -> bool {
 }
 
 fn write_environment(model: &Model, table: NodeId, name: &str, out: &mut Output<'_>) {
+    let _ = write_environment_with_arg(model, table, name, None, out);
+}
+
+/// Writes `\begin{name}[arg] rows \end{name}` and returns the span of the
+/// rows, which is what a fenced wrapper's body covers.
+fn write_environment_with_arg(
+    model: &Model,
+    table: NodeId,
+    name: &str,
+    argument: Option<char>,
+    out: &mut Output<'_>,
+) -> (usize, usize) {
     let NodeKind::Table { rows, .. } = model.kind(table) else {
-        return;
+        let at = out.text.len();
+        return (at, at);
     };
     push_command(out, "begin");
     out.push('{');
     out.push_str(name);
     out.push('}');
+    if let Some(argument) = argument {
+        out.push('[');
+        out.push(argument);
+        out.push(']');
+    }
+    let body_start = out.text.len();
     for (index, row) in rows.iter().enumerate() {
         if index > 0 {
             out.push_str(" \\\\ ");
         }
         write(model, *row, Context::Argument, out);
     }
+    let body_end = out.text.len();
     push_command(out, "end");
     out.push('{');
     out.push_str(name);
     out.push('}');
+    (body_start, body_end)
+}
+
+/// The table inside a fenced environment's body row.
+fn table_in_body(model: &Model, body: NodeId) -> Option<NodeId> {
+    let NodeKind::Row(content) = model.kind(body) else {
+        return None;
+    };
+    let [table] = content.as_slice() else {
+        return None;
+    };
+    matches!(model.kind(*table), NodeKind::Table { .. }).then_some(*table)
+}
+
+/// A starred matrix's `[l|c|r]`, which the model stores per column.
+fn environment_argument(name: &str, model: &Model, table: NodeId) -> Option<char> {
+    if !name.ends_with('*') {
+        return None;
+    }
+    let NodeKind::Table {
+        columns, alignment, ..
+    } = model.kind(table)
+    else {
+        return None;
+    };
+    uniform_alignment(*columns, alignment)
+}
+
+/// The one alignment every column shares, when there is one.
+fn uniform_alignment(columns: usize, alignment: &[Alignment]) -> Option<char> {
+    if columns == 0 || alignment.len() != columns {
+        return None;
+    }
+    let first = *alignment.first()?;
+    if !alignment.iter().all(|align| *align == first) {
+        return None;
+    }
+    Some(match first {
+        Alignment::Left => 'l',
+        Alignment::Center => 'c',
+        Alignment::Right => 'r',
+    })
+}
+
+/// The environment a table's shape implies when no source name survives.
+fn inferred_environment(columns: usize, alignment: &[Alignment]) -> (&'static str, Option<char>) {
+    if aligned_columns(columns, alignment) {
+        ("aligned", None)
+    } else if let Some(argument) = uniform_alignment(columns, alignment) {
+        ("matrix*", Some(argument))
+    } else {
+        ("matrix", None)
+    }
 }
 
 /// A left brace with no right fence and left-aligned columns is `cases`; the

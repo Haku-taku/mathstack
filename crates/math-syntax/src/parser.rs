@@ -24,6 +24,8 @@ enum Stop {
     Bracket,
     /// A grid cell: `&`, `\\`, `\end` and `}` end it.
     Cell,
+    /// A single formula delimited only by `\end`; used by `equation`.
+    Environment,
 }
 
 enum RowStep {
@@ -144,7 +146,11 @@ impl Parser<'_> {
                 TokenKind::Symbol(']') if stop == Stop::Bracket => RowStep::Close,
                 TokenKind::Symbol('&') if stop == Stop::Cell => RowStep::Close,
                 TokenKind::Command(name) if name == "\\" && stop == Stop::Cell => RowStep::Close,
-                TokenKind::Command(name) if name == "end" && stop == Stop::Cell => RowStep::Close,
+                TokenKind::Command(name)
+                    if name == "end" && matches!(stop, Stop::Cell | Stop::Environment) =>
+                {
+                    RowStep::Close
+                }
                 TokenKind::Command(name) if is_infix(name) => {
                     RowStep::Infix(name.clone(), token.span)
                 }
@@ -961,7 +967,7 @@ impl Parser<'_> {
         }
     }
 
-    /// `\begin{env} … \end{env}` for the matrix family and `cases`.
+    /// `\begin{env} … \end{env}` for the table family and `equation`.
     fn parse_environment(&mut self, span: Span, depth: usize) -> NodeId {
         let (name, name_span) = match self.text_argument("\\begin", span) {
             TextArgument::Text(name, span) => (name.trim().to_owned(), span),
@@ -969,11 +975,34 @@ impl Parser<'_> {
                 return self.make(NodeKind::Error("\\begin".to_owned()), span);
             }
         };
-        let Some(family) = Environment::lookup(&name) else {
+        let Some(environment) = Environment::lookup(&name) else {
             self.error(name_span, format!("unsupported environment `{name}`"));
             return self.make(NodeKind::Error(format!("\\begin{{{name}}}")), name_span);
         };
 
+        if environment.formula {
+            let content = self.parse_row(depth + 1, Stop::Environment);
+            let end_span = if self.at_environment_end() {
+                self.take_environment_end(&name, name_span)
+            } else {
+                let at = self.caret();
+                self.error(
+                    Span::new(span.start, at),
+                    format!("missing `\\end{{{name}}}`"),
+                );
+                Span::empty(at)
+            };
+            let content_span = Span::new(span.start, end_span.end.max(self.span_of(content).end));
+            self.model.set_span(content, content_span);
+            self.spellings.set_environment(content, name);
+            return content;
+        }
+
+        let column_alignment = if environment.optional_alignment {
+            self.parse_column_alignment()
+        } else {
+            None
+        };
         let mut cells: Vec<Vec<NodeId>> = Vec::new();
         let mut columns = 0;
         let end_span;
@@ -1032,10 +1061,10 @@ impl Parser<'_> {
         }
 
         columns = columns.max(1);
-        let alignment = match family {
-            Environment::Cases => vec![Alignment::Left; columns],
-            // `aligned` alternates a right-aligned column and a left one.
-            Environment::Aligned => (0..columns)
+        let alignment = match environment.alignment {
+            EnvironmentAlignment::Cases => vec![Alignment::Left; columns],
+            // `aligned` and `split` alternate a right column and a left one.
+            EnvironmentAlignment::Aligned => (0..columns)
                 .map(|column| {
                     if column % 2 == 0 {
                         Alignment::Right
@@ -1044,17 +1073,92 @@ impl Parser<'_> {
                     }
                 })
                 .collect(),
-            _ => Vec::new(),
+            // The table layout centers a column with no explicit alignment.
+            EnvironmentAlignment::Center => Vec::new(),
+            EnvironmentAlignment::Columns => {
+                column_alignment.map_or_else(Vec::new, |alignment| vec![alignment; columns])
+            }
         };
         let table_span = Span::new(span.start, end_span.end.max(span.end));
         let table = self.build_table(cells, columns, alignment, table_span, end_span.start);
-        match family.delimiters() {
+        let node = match environment.delimiters {
             None => table,
             Some((left, right)) => {
                 let body = self.make(NodeKind::Row(vec![table]), table_span);
                 self.make(NodeKind::Delimited { left, body, right }, table_span)
             }
+        };
+        self.spellings.set_environment(node, name);
+        node
+    }
+
+    /// The `[l|c|r]` argument of a starred matrix, which applies to every
+    /// column. None means the environment's centered default.
+    fn parse_column_alignment(&mut self) -> Option<Alignment> {
+        let next = self.peek().and_then(|token| match &token.kind {
+            TokenKind::Symbol(symbol) => Some(*symbol),
+            _ => None,
+        });
+        if next != Some('[') {
+            return None;
         }
+        self.advance();
+        let alignment = match self.peek().and_then(|token| match &token.kind {
+            TokenKind::Symbol(symbol) => Some(*symbol),
+            _ => None,
+        }) {
+            Some('l') => {
+                self.advance();
+                Some(Alignment::Left)
+            }
+            Some('c') => {
+                self.advance();
+                Some(Alignment::Center)
+            }
+            Some('r') => {
+                self.advance();
+                Some(Alignment::Right)
+            }
+            _ => {
+                let next = self.peek().map(|token| {
+                    (
+                        token.span,
+                        matches!(&token.kind, TokenKind::Command(name) if name == "end"),
+                    )
+                });
+                match next {
+                    Some((span, false)) => {
+                        self.advance();
+                        self.error(span, "expected `l`, `c` or `r`");
+                    }
+                    Some((span, true)) => self.error(span, "expected `l`, `c` or `r`"),
+                    None => self.error(Span::empty(self.caret()), "expected `l`, `c` or `r`"),
+                }
+                None
+            }
+        };
+        if matches!(
+            self.peek().map(|token| &token.kind),
+            Some(TokenKind::Symbol(']'))
+        ) {
+            self.advance();
+        } else {
+            self.error(Span::empty(self.caret()), "expected `]`");
+            // Recover to the closing bracket so the rows still parse.
+            while let Some(token) = self.peek() {
+                match &token.kind {
+                    TokenKind::Symbol(']') => {
+                        self.advance();
+                        break;
+                    }
+                    TokenKind::Command(name) if name == "end" => break,
+                    _ => {
+                        self.advance();
+                    }
+                }
+            }
+        }
+        alignment
     }
 
     /// Pads rows to `columns` and wraps them in a table. `tail` is where the
@@ -1406,46 +1510,113 @@ impl Parser<'_> {
     }
 }
 
-/// The table environments the grammar accepts.
+/// One accepted environment: what its body is and how its columns align.
 #[derive(Clone, Copy)]
-enum Environment {
-    Matrix,
-    Parenthesized,
-    Bracketed,
-    Braced,
-    Determinant,
-    Norm,
+struct Environment {
+    delimiters: Option<(Option<char>, Option<char>)>,
+    alignment: EnvironmentAlignment,
+    /// `matrix*` and its fenced variants take a `[l|c|r]` argument.
+    optional_alignment: bool,
+    /// `equation` holds one formula instead of a grid.
+    formula: bool,
+}
+
+#[derive(Clone, Copy)]
+enum EnvironmentAlignment {
+    /// A matrix: centered unless the starred form names a column alignment.
+    Columns,
+    /// Both columns left-aligned (`cases` and its variants).
     Cases,
+    /// A right column followed by a left one (`aligned`, `split`).
     Aligned,
+    /// One centered column (`gather`, `gathered`).
+    Center,
 }
 
 impl Environment {
     fn lookup(name: &str) -> Option<Self> {
+        let environment = |delimiters, alignment, optional_alignment| Environment {
+            delimiters,
+            alignment,
+            optional_alignment,
+            formula: false,
+        };
         Some(match name {
-            "matrix" => Environment::Matrix,
-            "pmatrix" => Environment::Parenthesized,
-            "bmatrix" => Environment::Bracketed,
-            "Bmatrix" => Environment::Braced,
-            "vmatrix" => Environment::Determinant,
-            "Vmatrix" => Environment::Norm,
-            "cases" => Environment::Cases,
-            "aligned" | "align" | "align*" => Environment::Aligned,
+            "matrix" => environment(None, EnvironmentAlignment::Columns, false),
+            "matrix*" => environment(None, EnvironmentAlignment::Columns, true),
+            "pmatrix" => environment(
+                Some((Some('('), Some(')'))),
+                EnvironmentAlignment::Columns,
+                false,
+            ),
+            "pmatrix*" => environment(
+                Some((Some('('), Some(')'))),
+                EnvironmentAlignment::Columns,
+                true,
+            ),
+            "bmatrix" => environment(
+                Some((Some('['), Some(']'))),
+                EnvironmentAlignment::Columns,
+                false,
+            ),
+            "bmatrix*" => environment(
+                Some((Some('['), Some(']'))),
+                EnvironmentAlignment::Columns,
+                true,
+            ),
+            "Bmatrix" => environment(
+                Some((Some('{'), Some('}'))),
+                EnvironmentAlignment::Columns,
+                false,
+            ),
+            "Bmatrix*" => environment(
+                Some((Some('{'), Some('}'))),
+                EnvironmentAlignment::Columns,
+                true,
+            ),
+            "vmatrix" => environment(
+                Some((Some('|'), Some('|'))),
+                EnvironmentAlignment::Columns,
+                false,
+            ),
+            "vmatrix*" => environment(
+                Some((Some('|'), Some('|'))),
+                EnvironmentAlignment::Columns,
+                true,
+            ),
+            "Vmatrix" => environment(
+                Some((Some('‖'), Some('‖'))),
+                EnvironmentAlignment::Columns,
+                false,
+            ),
+            "Vmatrix*" => environment(
+                Some((Some('‖'), Some('‖'))),
+                EnvironmentAlignment::Columns,
+                true,
+            ),
+            "cases" | "dcases" => {
+                environment(Some((Some('{'), None)), EnvironmentAlignment::Cases, false)
+            }
+            "rcases" => environment(Some((None, Some('}'))), EnvironmentAlignment::Cases, false),
+            "drcases" => environment(
+                Some((Some('{'), Some('}'))),
+                EnvironmentAlignment::Cases,
+                false,
+            ),
+            "aligned" | "align" | "align*" | "split" => {
+                environment(None, EnvironmentAlignment::Aligned, false)
+            }
+            "gather" | "gather*" | "gathered" => {
+                environment(None, EnvironmentAlignment::Center, false)
+            }
+            "equation" | "equation*" => Environment {
+                delimiters: None,
+                alignment: EnvironmentAlignment::Center,
+                optional_alignment: false,
+                formula: true,
+            },
             _ => return None,
         })
-    }
-
-    /// The fences the parser wraps around the table; `None` is a bare grid.
-    fn delimiters(self) -> Option<(Option<char>, Option<char>)> {
-        match self {
-            Environment::Matrix => None,
-            Environment::Parenthesized => Some((Some('('), Some(')'))),
-            Environment::Bracketed => Some((Some('['), Some(']'))),
-            Environment::Braced => Some((Some('{'), Some('}'))),
-            Environment::Determinant => Some((Some('|'), Some('|'))),
-            Environment::Norm => Some((Some('‖'), Some('‖'))),
-            Environment::Cases => Some((Some('{'), None)),
-            Environment::Aligned => None,
-        }
     }
 }
 

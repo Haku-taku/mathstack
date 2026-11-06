@@ -1949,6 +1949,9 @@ impl Editor {
         if let Some(spelling) = document.spellings.get(id) {
             self.spellings.insert(copy, spelling.clone());
         }
+        if let Some(environment) = document.spellings.environment(id) {
+            self.spellings.set_environment(copy, environment.to_owned());
+        }
         copy
     }
 

@@ -27,12 +27,12 @@ list of KaTeX commands.
 | Property | State | Evidence |
 | --- | --- | --- |
 | LaTeX input | recursive-descent parser, spans on every node | `math-syntax`; `every_corpus_byte_is_covered_by_a_span_or_diagnostic` |
-| Syntax breadth | 298/987 KaTeX probe entries; 77/77 curated constructs | `docs/completeness.md`; `conformance.rs` |
+| Syntax breadth | 313/987 KaTeX probe entries; 77/77 curated constructs | `docs/completeness.md`; `conformance.rs` |
 | Semantic tree | stable `NodeId` arena, `Origin`, `Span` | `math-core::Model`; M4 tests |
 | Layout | TeX Appendix G rules driven by MATH constants | `math-diff --gate`, 16-formula differential |
 | Fonts | any OpenType MATH face, caller-supplied bytes; `ssty` variants | `math-font`; `script_levels_take_the_fonts_alternates` |
 | Output | `Layout`/`MathBox` display list; `math-svg` painter | `math-svg`; `math-editor-demo` |
-| Editing | model edits, caret paths, selection, empty-slot rects, IME, undo, spellings | `math-editor`; 28 editor tests |
+| Editing | model edits, caret paths, selection, empty-slot rects, IME, undo, spellings | `math-editor`; 29 editor tests |
 | Macros | token-list `\def`/`\newcommand` with `Origin::Macro`, budgets | `m3-macros-text.md` |
 | Error recovery | diagnostic nodes keep the surrounding structure | `errors_recover_in_place`; `robustness.rs` |
 | License | MIT OR Apache-2.0 | `Cargo.toml` |
@@ -93,7 +93,7 @@ ratex is a KaTeX port with hardcoded Computer Modern metrics and a flat display
 list (`raw/rust.md`, ratex section).
 
 - **KaTeX command parity:** **not replaceable yet**. The probe baseline is
-  298/987 entries, and probe coverage is not the same as KaTeX's semantics.
+  313/987 entries, and probe coverage is not the same as KaTeX's semantics.
 - **Arbitrary math fonts:** this stack is stronger: layout is MATH-driven and
   accepts caller font bytes, while ratex cannot accept another face.
 - **Editing:** ratex has none.

@@ -554,3 +554,14 @@ fn table_cells_survive_text_deletion() {
     press(&mut table, Key::Backspace);
     assert_eq!(table.source(), "\\begin {matrix} &  \\\\  & \\end {matrix}");
 }
+
+#[test]
+fn a_cut_environment_keeps_its_name() {
+    let mut editor = editor("\\begin{dcases}a&b\\\\c&d\\end{dcases}");
+    let exported = editor.source();
+    assert!(editor.select_all());
+    let copied = editor.cut_selection(&FakeFont).expect("a selection");
+    assert_eq!(copied, exported);
+    assert!(editor.insert_latex(&copied, &FakeFont));
+    assert_eq!(editor.source(), exported);
+}

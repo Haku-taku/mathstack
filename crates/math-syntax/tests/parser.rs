@@ -461,6 +461,21 @@ fn writer_round_trips_the_grammar() {
         "\\begin{cases}x&x>0\\\\0&x\\le 0\\end{cases}",
         "\\begin{matrix}a&b\\\\\\end{matrix}",
         "\\begin{aligned}a&=b\\\\c&=d\\end{aligned}",
+        "\\begin{equation}a+b\\end{equation}",
+        "\\begin{equation*}a=b\\end{equation*}",
+        "\\begin{gather}a=b\\\\c=d\\end{gather}",
+        "\\begin{gather*}a=b\\end{gather*}",
+        "\\begin{gathered}a=b\\\\c=d\\end{gathered}",
+        "\\begin{split}a&=b\\\\c&=d\\end{split}",
+        "\\begin{dcases}a&b\\\\c&d\\end{dcases}",
+        "\\begin{rcases}a&b\\end{rcases}",
+        "\\begin{drcases}a&b\\end{drcases}",
+        "\\begin{matrix*}[l]a&b\\\\c&d\\end{matrix*}",
+        "\\begin{pmatrix*}[r]a&b\\end{pmatrix*}",
+        "\\begin{bmatrix*}[c]a&b\\end{bmatrix*}",
+        "\\begin{Bmatrix*}[l]a&b\\end{Bmatrix*}",
+        "\\begin{vmatrix*}[r]a&b\\end{vmatrix*}",
+        "\\begin{Vmatrix*}[c]a&b\\end{Vmatrix*}",
         "\\stackrel{!}{=}",
         "\\substack{0<i<n\\\\i\\ne 1}",
         "\\cfrac{1}{1+\\cfrac{1}{x}}",
@@ -836,6 +851,101 @@ fn matrix_environments_build_rows_and_cells() {
         alignment,
         &vec![math_core::Alignment::Right, math_core::Alignment::Left]
     );
+}
+
+#[test]
+fn environment_variants_keep_their_table_and_name() {
+    // `equation` unwraps to its formula; the name only survives the writer.
+    let document = parse("\\begin{equation}a+b\\end{equation}");
+    let first = row(&document.model, document.root())[0];
+    assert!(matches!(
+        document.model.kind(first),
+        NodeKind::Row(children) if children.len() == 3
+    ));
+    assert!(document.to_latex().starts_with("\\begin {equation}a+b"));
+
+    // `gather` is one centred column; `split` alternates like `aligned`.
+    let document = parse("\\begin{gather}a=b\\\\c=d\\end{gather}");
+    let NodeKind::Table {
+        columns,
+        alignment,
+        rows,
+    } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected a gather table");
+    };
+    assert_eq!(*columns, 1);
+    assert!(alignment.is_empty(), "gather columns default to centred");
+    assert_eq!(rows.len(), 2);
+    assert!(document.to_latex().starts_with("\\begin {gather}"));
+
+    let document = parse("\\begin{split}a&=b\\\\c&=d\\end{split}");
+    let NodeKind::Table { alignment, .. } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected a split table");
+    };
+    assert_eq!(
+        alignment,
+        &vec![math_core::Alignment::Right, math_core::Alignment::Left]
+    );
+    assert!(document.to_latex().starts_with("\\begin {split}"));
+
+    // The cases family differs only in which fence it carries; `dcases`
+    // keeps its name even though its table is shaped like `cases`.
+    for (source, left, right, name) in [
+        ("\\begin{dcases}a&b\\end{dcases}", Some('{'), None, "dcases"),
+        ("\\begin{rcases}a&b\\end{rcases}", None, Some('}'), "rcases"),
+        (
+            "\\begin{drcases}a&b\\end{drcases}",
+            Some('{'),
+            Some('}'),
+            "drcases",
+        ),
+    ] {
+        let document = parse(source);
+        let NodeKind::Delimited {
+            left: actual_left,
+            right: actual_right,
+            body,
+        } = document
+            .model
+            .kind(row(&document.model, document.root())[0])
+        else {
+            panic!("expected the {name} fence");
+        };
+        assert_eq!((*actual_left, *actual_right), (left, right));
+        let NodeKind::Row(content) = document.model.kind(*body) else {
+            panic!("expected a row inside the {name} fence");
+        };
+        let NodeKind::Table { alignment, .. } = document.model.kind(content[0]) else {
+            panic!("expected the {name} table");
+        };
+        assert_eq!(alignment, &vec![math_core::Alignment::Left; 2]);
+        assert!(
+            document
+                .to_latex()
+                .starts_with(&format!("\\begin {{{name}}}")),
+            "the writer must keep the {name} name"
+        );
+    }
+
+    // A starred matrix's optional argument applies to every column.
+    let document = parse("\\begin{matrix*}[r]a&b\\end{matrix*}");
+    let NodeKind::Table {
+        columns, alignment, ..
+    } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected a starred matrix table");
+    };
+    assert_eq!(*columns, 2);
+    assert_eq!(alignment, &vec![math_core::Alignment::Right; 2]);
+    assert!(document.to_latex().starts_with("\\begin {matrix*}[r]"));
 }
 
 #[test]
