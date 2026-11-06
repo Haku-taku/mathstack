@@ -53,7 +53,7 @@ replace the LaTeX/MathML/formulary body with `math-syntax` + `math-font` +
 | `Formula.width/ascent/descent` | `Layout` of the same names | |
 | `MathItem::Glyph` | `math_core::Item::Glyph` | `advance` from `Face::advance`; `color` from the item; `mirrored: false` |
 | `MathItem::Rule` | `math_core::Item::Rule` (`y` is the top edge) | |
-| `MathItem::Background` | none | only MathML `mathbackground` produces one today |
+| `MathItem::Background` | `math_core::Item::Background` (`\colorbox`/`\fcolorbox`) | paint it before glyphs, rules and lines |
 | `Formula.errors` | `Error` nodes' geometry (`Geometry::rect_of`) plus the diagnostic for that span | message text comes from `Diagnostic::message` |
 | `MathError::NoFace` | face parsing failure | |
 | `MathError::Failed` | layout failure | |

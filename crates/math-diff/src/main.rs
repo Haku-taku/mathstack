@@ -297,6 +297,10 @@ fn documented_delta(name: &str) -> Option<(f32, f32, f32)> {
 
 fn describe_ours(item: &math_core::Item) -> String {
     match item {
+        math_core::Item::Background(background) => format!(
+            "background x {:>7.3} y {:>7.3} w {:>7.3} h {:.3}",
+            background.x, background.y, background.width, background.height
+        ),
         math_core::Item::Glyph(glyph) => format!(
             "glyph {:>5} x {:>7.3} baseline {:>7.3} size {:.3}",
             glyph.glyph.0, glyph.x, glyph.baseline, glyph.size

@@ -193,6 +193,15 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
             write_dump(model, *body, out);
             out.push(')');
         }
+        NodeKind::ColorBox {
+            background,
+            border,
+            body,
+        } => {
+            out.push_str(&format!("ColorBox({background:?},{border:?},"));
+            write_dump(model, *body, out);
+            out.push(')');
+        }
         NodeKind::Class {
             class,
             body,
@@ -743,6 +752,57 @@ fn textcolor_and_color_write_back_their_own_forms() {
     assert_eq!(hex.to_latex(), "\\textcolor {#1a2b3c}{x}");
 
     let unknown = parse("\\textcolor{bogus}{x}");
+    assert_eq!(unknown.diagnostics.len(), 1, "an unknown name is reported");
+}
+
+#[test]
+fn colorbox_arguments_are_text_and_write_back_their_commands() {
+    let colorbox = parse("\\colorbox{red}{a+b}");
+    assert!(!colorbox.has_errors(), "{:?}", colorbox.diagnostics);
+    let NodeKind::ColorBox {
+        background,
+        border,
+        body,
+    } = colorbox
+        .model
+        .kind(row(&colorbox.model, colorbox.root())[0])
+    else {
+        panic!("expected a colorbox");
+    };
+    assert_eq!(*background, Color::rgb(255, 0, 0));
+    assert_eq!(*border, None);
+    assert!(
+        matches!(colorbox.model.kind(*body), NodeKind::Text(text) if text == "a+b"),
+        "the body is a text argument, not math"
+    );
+    assert_eq!(colorbox.to_latex(), "\\colorbox {red}{a+b}");
+    assert_eq!(
+        to_latex(&colorbox.model, colorbox.root()),
+        "\\colorbox {red}{a+b}"
+    );
+
+    let framed = parse("\\fcolorbox{blue}{red}{x}");
+    assert!(!framed.has_errors(), "{:?}", framed.diagnostics);
+    let NodeKind::ColorBox {
+        background,
+        border,
+        body,
+    } = framed.model.kind(row(&framed.model, framed.root())[0])
+    else {
+        panic!("expected an fcolorbox");
+    };
+    assert_eq!(*border, Some(Color::rgb(0, 0, 255)));
+    assert_eq!(*background, Color::rgb(255, 0, 0));
+    assert!(matches!(framed.model.kind(*body), NodeKind::Text(text) if text == "x"));
+    let written = framed.to_latex();
+    assert_eq!(written, "\\fcolorbox {blue}{red}{x}");
+    let reparsed = parse(&written);
+    assert_eq!(
+        dump(&framed.model, framed.root()),
+        dump(&reparsed.model, reparsed.root())
+    );
+
+    let unknown = parse("\\colorbox{bogus}{x}");
     assert_eq!(unknown.diagnostics.len(), 1, "an unknown name is reported");
 }
 

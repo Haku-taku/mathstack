@@ -31,8 +31,24 @@ pub fn to_svg(layout: &Layout, font: &dyn GlyphOutline, options: &Options) -> St
         num(width),
         num(height)
     );
+    // Backgrounds are their own primitive, so they are painted before every
+    // glyph, rule and line regardless of where they sit in the list.
+    for item in &layout.items {
+        if let Item::Background(background) = item {
+            let _ = write!(
+                svg,
+                "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{}/>",
+                num(background.x + padding),
+                num(background.y + padding),
+                num(background.width),
+                num(background.height),
+                paint(Some(background.color), "fill"),
+            );
+        }
+    }
     for item in &layout.items {
         match item {
+            Item::Background(_) => {}
             Item::Glyph(glyph) => {
                 let mut path = PathWriter::default();
                 if !font.outline(glyph.glyph, &mut path) {

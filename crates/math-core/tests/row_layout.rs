@@ -196,7 +196,7 @@ fn glyphs(layout: &Layout) -> Vec<(f32, f32)> {
         .iter()
         .filter_map(|item| match item {
             Item::Glyph(glyph) => Some((glyph.x, glyph.baseline)),
-            Item::Rule(_) | Item::Line(_) => None,
+            Item::Background(_) | Item::Rule(_) | Item::Line(_) => None,
         })
         .collect()
 }
@@ -340,8 +340,7 @@ fn fraction_geometry_uses_math_gaps_and_axis() {
         .iter()
         .find_map(|item| match item {
             Item::Rule(rule) => Some(rule),
-            Item::Line(_) => None,
-            Item::Glyph(_) => None,
+            Item::Background(_) | Item::Line(_) | Item::Glyph(_) => None,
         })
         .expect("a bar fraction has a rule");
     assert!(close(rule.y, 9.3 - 2.7));
@@ -390,8 +389,7 @@ fn radical_with_degree_places_the_index_and_overbar() {
         .iter()
         .find_map(|item| match item {
             Item::Rule(rule) => Some(rule),
-            Item::Line(_) => None,
-            Item::Glyph(_) => None,
+            Item::Background(_) | Item::Line(_) | Item::Glyph(_) => None,
         })
         .expect("a radical has an overbar");
     assert!(close(rule.x, 3.95 + 5.0));
@@ -414,7 +412,7 @@ fn script_levels_take_the_fonts_alternates() {
         .iter()
         .filter_map(|item| match item {
             Item::Glyph(glyph) => Some(glyph.glyph.0),
-            Item::Rule(_) | Item::Line(_) => None,
+            Item::Background(_) | Item::Rule(_) | Item::Line(_) => None,
         })
         .collect();
     // The base keeps its glyph; the two script depths take their alternates
@@ -632,7 +630,7 @@ fn glyph_ids(layout: &Layout) -> Vec<u16> {
         .iter()
         .filter_map(|item| match item {
             Item::Glyph(glyph) => Some(glyph.glyph.0),
-            Item::Rule(_) | Item::Line(_) => None,
+            Item::Background(_) | Item::Rule(_) | Item::Line(_) => None,
         })
         .collect()
 }
@@ -681,7 +679,7 @@ fn accents_center_on_the_math_attachment_and_clear_the_base() {
         .iter()
         .filter_map(|item| match item {
             Item::Glyph(glyph) => Some((glyph.glyph.0, glyph.x, glyph.baseline)),
-            Item::Rule(_) | Item::Line(_) => None,
+            Item::Background(_) | Item::Rule(_) | Item::Line(_) => None,
         })
         .collect();
     assert_eq!(glyphs.len(), 2);
@@ -748,8 +746,7 @@ fn bars_span_the_base_and_clear_it_by_the_math_gaps() {
         .iter()
         .find_map(|item| match item {
             Item::Rule(rule) => Some(rule),
-            Item::Line(_) => None,
-            Item::Glyph(_) => None,
+            Item::Background(_) | Item::Line(_) | Item::Glyph(_) => None,
         })
         .expect("an overline has a rule");
     assert!(close(rule.y, 1.0));
@@ -768,8 +765,7 @@ fn bars_span_the_base_and_clear_it_by_the_math_gaps() {
         .iter()
         .find_map(|item| match item {
             Item::Rule(rule) => Some(rule),
-            Item::Line(_) => None,
-            Item::Glyph(_) => None,
+            Item::Background(_) | Item::Line(_) | Item::Glyph(_) => None,
         })
         .expect("an underline has a rule");
     assert!(close(rule.y, 9.0));
@@ -1215,7 +1211,7 @@ fn table_boundaries_carry_rules_and_flush_spacing() {
         .iter()
         .filter_map(|item| match item {
             Item::Rule(rule) => Some((rule.x, rule.y, rule.width, rule.height)),
-            Item::Glyph(_) | Item::Line(_) => None,
+            Item::Background(_) | Item::Glyph(_) | Item::Line(_) => None,
         })
         .collect();
     // The display list is shifted down by the ascent, so the rule starts at 0.
@@ -1404,4 +1400,43 @@ fn color_reaches_nested_glyphs_and_rules() {
         })
         .collect();
     assert_eq!(rules, vec![Some(red)], "the fraction bar is colored");
+}
+
+#[test]
+fn colorbox_background_sits_behind_the_text_and_the_border_keeps_its_color() {
+    let background = Color::rgb(255, 0, 0);
+    let border = Color::rgb(0, 0, 255);
+    let (model, _) = Model::build(|m| {
+        let body = m.text("x");
+        m.color_box(background, Some(border), body)
+    });
+
+    // \fboxsep 0.3em plus \fboxrule 0.04em on every side of 5×8 text.
+    let layout = measured(&model, Style::TEXT);
+    assert!(close(layout.width, 5.0 + 6.8));
+    assert!(close(layout.ascent, 6.0 + 3.4));
+    assert!(close(layout.descent, 2.0 + 3.4));
+
+    let Item::Background(fill) = layout.items[0] else {
+        panic!("the background must come before the content");
+    };
+    assert_eq!(fill.color, background);
+    assert!(close(fill.x, 0.0));
+    assert!(close(fill.y, 0.0));
+    assert!(close(fill.width, layout.width));
+    assert!(close(fill.height, layout.ascent + layout.descent));
+
+    let rules: Vec<_> = layout
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Rule(rule) => Some(rule),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rules.len(), 4, "a frame has four edges");
+    assert!(
+        rules.iter().all(|rule| rule.color == Some(border)),
+        "the frame uses the border color, not the background"
+    );
 }

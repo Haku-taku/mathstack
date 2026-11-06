@@ -8,10 +8,23 @@ use crate::font::GlyphId;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Item {
+    /// A filled area painted behind the content of its box.
+    Background(BackgroundItem),
     Glyph(GlyphItem),
     Rule(RuleItem),
     /// A stroked segment, such as a cancellation diagonal.
     Line(LineItem),
+}
+
+/// A solid fill behind a box's ink, such as `\colorbox`'s background.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BackgroundItem {
+    pub x: f32,
+    /// The top edge.
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub color: Color,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

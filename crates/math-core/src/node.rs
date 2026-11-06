@@ -298,6 +298,13 @@ pub enum NodeKind {
         top: bool,
         bottom: bool,
     },
+    /// `\colorbox`/`\fcolorbox`: text on a filled rectangle, with an
+    /// optional border whose color is separate from the background.
+    ColorBox {
+        background: Color,
+        border: Option<Color>,
+        body: NodeId,
+    },
     /// `\boxed`: the base inside a rule frame.
     Boxed {
         body: NodeId,
@@ -506,6 +513,7 @@ impl NodeKind {
             | NodeKind::Underline { body }
             | NodeKind::Phantom { body, .. }
             | NodeKind::Smash { body, .. }
+            | NodeKind::ColorBox { body, .. }
             | NodeKind::Boxed { body }
             | NodeKind::Cancel { body, .. }
             | NodeKind::Styled { body, .. }
@@ -654,6 +662,15 @@ impl NodeKind {
                 body: map(*body),
                 top: *top,
                 bottom: *bottom,
+            },
+            NodeKind::ColorBox {
+                background,
+                border,
+                body,
+            } => NodeKind::ColorBox {
+                background: *background,
+                border: *border,
+                body: map(*body),
             },
             NodeKind::Boxed { body } => NodeKind::Boxed { body: map(*body) },
             NodeKind::OverUnder { base, over, under } => NodeKind::OverUnder {
@@ -1091,6 +1108,7 @@ impl Model {
             | NodeKind::Underline { body }
             | NodeKind::Phantom { body, .. }
             | NodeKind::Smash { body, .. }
+            | NodeKind::ColorBox { body, .. }
             | NodeKind::Boxed { body }
             | NodeKind::Cancel { body, .. }
             | NodeKind::HorizontalBrace { body, .. }
@@ -1475,6 +1493,17 @@ impl ModelBuilder {
 
     pub fn boxed(&mut self, body: NodeId) -> NodeId {
         self.alloc(NodeKind::Boxed { body }, Span::default())
+    }
+
+    pub fn color_box(&mut self, background: Color, border: Option<Color>, body: NodeId) -> NodeId {
+        self.alloc(
+            NodeKind::ColorBox {
+                background,
+                border,
+                body,
+            },
+            Span::default(),
+        )
     }
 
     pub fn overset(&mut self, base: NodeId, over: Option<NodeId>, under: Option<NodeId>) -> NodeId {

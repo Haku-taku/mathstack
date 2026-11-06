@@ -919,6 +919,35 @@ impl Parser<'_> {
                 let end = self.span_of(body).end.max(span.end);
                 self.make(NodeKind::Color { color, body }, Span::new(span.start, end))
             }
+            "colorbox" => {
+                self.advance();
+                let (background, _) = self.color_argument("\\colorbox", span);
+                let body = self.text_body("\\colorbox", span);
+                let end = self.span_of(body).end.max(span.end);
+                self.make(
+                    NodeKind::ColorBox {
+                        background,
+                        border: None,
+                        body,
+                    },
+                    Span::new(span.start, end),
+                )
+            }
+            "fcolorbox" => {
+                self.advance();
+                let (border, _) = self.color_argument("\\fcolorbox", span);
+                let (background, _) = self.color_argument("\\fcolorbox", span);
+                let body = self.text_body("\\fcolorbox", span);
+                let end = self.span_of(body).end.max(span.end);
+                self.make(
+                    NodeKind::ColorBox {
+                        background,
+                        border: Some(border),
+                        body,
+                    },
+                    Span::new(span.start, end),
+                )
+            }
             "color" => {
                 self.advance();
                 let (color, _) = self.color_argument("\\color", span);
@@ -1713,14 +1742,18 @@ impl Parser<'_> {
     /// Text mode keeps the raw source between the braces, so spaces and
     /// nested groups survive; commands inside are literal for now.
     fn parse_text(&mut self, span: Span) -> NodeId {
-        match self.text_argument("\\text", span) {
+        self.text_body("\\text", span)
+    }
+
+    /// A text-mode argument: `\text`'s body and the second/third arguments of
+    /// `\colorbox`/`\fcolorbox` are read as text, not math.
+    fn text_body(&mut self, command: &str, span: Span) -> NodeId {
+        match self.text_argument(command, span) {
             TextArgument::Text(text, span) => {
                 let decoded = decode_text(&text);
                 self.make(NodeKind::Text(decoded), span)
             }
-            TextArgument::Unavailable(span) => {
-                self.make(NodeKind::Error("\\text".to_owned()), span)
-            }
+            TextArgument::Unavailable(span) => self.make(NodeKind::Error(command.to_owned()), span),
         }
     }
 

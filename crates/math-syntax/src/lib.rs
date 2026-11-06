@@ -84,6 +84,7 @@ fn contains_error(model: &Model, id: NodeId) -> bool {
         NodeKind::Overline { body } | NodeKind::Underline { body } => contains_error(model, *body),
         NodeKind::Phantom { body, .. }
         | NodeKind::Smash { body, .. }
+        | NodeKind::ColorBox { body, .. }
         | NodeKind::Boxed { body }
         | NodeKind::Cancel { body, .. }
         | NodeKind::Styled { body, .. }

@@ -11,7 +11,7 @@
 use crate::atom::{Atom, Variant, math_italic, variant_char};
 use crate::class::{AtomClass, gap};
 use crate::color::Color;
-use crate::display::{GlyphItem, Item, Layout, LineItem, RuleItem};
+use crate::display::{BackgroundItem, GlyphItem, Item, Layout, LineItem, RuleItem};
 use crate::font::{GlyphId, MathFont, Stretched};
 use crate::geometry::Geometry;
 use crate::node::{
@@ -195,6 +195,7 @@ impl MathBox {
         }
         for item in &mut self.items {
             let slot = match item {
+                Item::Background(_) => continue,
                 Item::Glyph(glyph) => &mut glyph.color,
                 Item::Rule(rule) => &mut rule.color,
                 Item::Line(line) => &mut line.color,
@@ -205,22 +206,37 @@ impl MathBox {
         }
     }
 
-    /// Emits every painted item in the caller's coordinates, children first
-    /// so a base's ink precedes a mark drawn over it.
+    /// Emits every painted item in the caller's coordinates. A box's own
+    /// backgrounds come first so they sit behind both its ink and its
+    /// children's; the remaining items follow the children, so a base's ink
+    /// precedes a mark drawn over it.
     fn flatten(&self, dx: f32, dy: f32, out: &mut Vec<Item>) {
+        for item in &self.items {
+            if matches!(item, Item::Background(_)) {
+                let mut item = *item;
+                translate(&mut item, dx, dy);
+                out.push(item);
+            }
+        }
         for placed in &self.children {
             placed.child.flatten(dx + placed.dx, dy + placed.dy, out);
         }
         for item in &self.items {
-            let mut item = *item;
-            translate(&mut item, dx, dy);
-            out.push(item);
+            if !matches!(item, Item::Background(_)) {
+                let mut item = *item;
+                translate(&mut item, dx, dy);
+                out.push(item);
+            }
         }
     }
 }
 
 fn translate(item: &mut Item, dx: f32, dy: f32) {
     match item {
+        Item::Background(background) => {
+            background.x += dx;
+            background.y += dy;
+        }
         Item::Glyph(glyph) => {
             glyph.x += dx;
             glyph.baseline += dy;
@@ -321,6 +337,11 @@ fn layout_kind(
             layout_smash(cx, *body, *top, *bottom, size, style, diagnostics)
         }
         NodeKind::Boxed { body } => layout_boxed(cx, *body, size, style, diagnostics),
+        NodeKind::ColorBox {
+            background,
+            border,
+            body,
+        } => layout_color_box(cx, *background, *border, *body, size, style, diagnostics),
         NodeKind::Cancel { body, up, down } => {
             layout_cancel(cx, *body, *up, *down, size, style, diagnostics)
         }
@@ -669,9 +690,10 @@ fn node_class(cx: &Cx<'_>, id: NodeId, style: Style) -> AtomClass {
         }
         NodeKind::Arrow { .. } => AtomClass::Rel,
         NodeKind::SizedDelimiter { class, .. } => *class,
-        NodeKind::Phantom { .. } | NodeKind::Boxed { .. } | NodeKind::Cancel { .. } => {
-            AtomClass::Ord
-        }
+        NodeKind::Phantom { .. }
+        | NodeKind::Boxed { .. }
+        | NodeKind::ColorBox { .. }
+        | NodeKind::Cancel { .. } => AtomClass::Ord,
         NodeKind::Table { .. } | NodeKind::TableRow { .. } => AtomClass::Inner,
         NodeKind::Smash { body, .. } => node_class(cx, *body, style),
         NodeKind::OverUnder { base, .. } => node_class(cx, *base, style),
@@ -1180,6 +1202,59 @@ fn layout_hspace(cx: &Cx<'_>, length: Length, size: f32, style: Style) -> MathBo
         width: length.em(em, cx.font.x_height()),
         ..MathBox::empty()
     }
+}
+
+/// `\colorbox` pads by `\fboxsep`; `\fcolorbox` adds the frame rule on top of
+/// that padding and draws the frame in its own color.
+fn layout_color_box(
+    cx: &Cx<'_>,
+    background: Color,
+    border: Option<Color>,
+    body_node: NodeId,
+    size: f32,
+    style: Style,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> MathBox {
+    let em = style.em(cx.font, size);
+    let padding = 0.3 * em;
+    let thickness = if border.is_some() { 0.04 * em } else { 0.0 };
+    let inset = padding + thickness;
+    let body = layout_node(cx, body_node, size, style, diagnostics);
+    let width = body.width + 2.0 * inset;
+    let ascent = body.ascent + inset;
+    let descent = body.descent + inset;
+    let mut out = MathBox {
+        width,
+        ascent,
+        descent,
+        ..MathBox::empty()
+    };
+    out.items.push(Item::Background(BackgroundItem {
+        x: 0.0,
+        y: -ascent,
+        width,
+        height: ascent + descent,
+        color: background,
+    }));
+    if let Some(color) = border {
+        let height = ascent + descent;
+        for (x, y, rule_width, rule_height) in [
+            (0.0, -ascent, width, thickness),
+            (0.0, descent - thickness, width, thickness),
+            (0.0, -ascent, thickness, height),
+            (width - thickness, -ascent, thickness, height),
+        ] {
+            out.items.push(Item::Rule(RuleItem {
+                color: Some(color),
+                x,
+                y,
+                width: rule_width,
+                height: rule_height,
+            }));
+        }
+    }
+    out.push_child(body, inset, 0.0, Slot::Body);
+    out
 }
 
 /// `\cancel`: the body's box with one diagonal, or both.

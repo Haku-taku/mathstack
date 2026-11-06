@@ -366,6 +366,34 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             // enclosing row's, not its own.
             write(model, *body, Context::Argument, out);
         }
+        NodeKind::ColorBox {
+            background,
+            border,
+            body,
+        } => {
+            match border {
+                Some(border) => {
+                    push_command(out, "fcolorbox");
+                    out.push('{');
+                    out.push_str(&colors::write(*border));
+                    out.push('}');
+                }
+                None => push_command(out, "colorbox"),
+            }
+            out.push('{');
+            out.push_str(&colors::write(*background));
+            out.push('}');
+            // The body is a text argument, so `\text{…}` would be read back
+            // as literal text; write the characters themselves.
+            match model.kind(*body) {
+                NodeKind::Text(text) => {
+                    out.push('{');
+                    write_text(text, out);
+                    out.push('}');
+                }
+                _ => write_argument(model, *body, out),
+            }
+        }
         NodeKind::Color { color, body } => match out.spelling(model, id) {
             Some(text) => {
                 out.push_token(&text);

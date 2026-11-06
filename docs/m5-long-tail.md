@@ -190,6 +190,27 @@ as a group for atom spacing (one element keeps its class, more count as Ord),
 the same approximation the style switch makes; KaTeX's fragment behavior for a
 colored multi-atom group is not reproduced.
 
+`\colorbox{color}{text}` and `\fcolorbox{frame}{background}{text}` are
+`ColorBox { background, border, body }`; their body is a text-mode argument,
+like `\text`, not a math list. `\colorbox` pads by `\fboxsep` (0.3 em) and
+draws no frame; `\fcolorbox` adds the `\fboxrule` (0.04 em) frame on top of
+that padding, fills with the background color and draws the frame in the border
+color. The writer derives the command from the border and prints the two color
+arguments in order, so both forms round-trip. An unknown color is the same
+diagnostic and black fallback as `\textcolor`. This follows TeX's `\fbox`
+model, which puts the rule outside the separation on every side. KaTeX's
+border-box frame spans the padding horizontally instead, so its `\fcolorbox`
+is 0.08 em narrower than this stack; the vertical extent agrees. KaTeX also
+admits `\colorbox` inside `\text`; commands inside this stack's `\text` stay
+literal, so the box is math-mode-only here.
+
+A background is not a rule drawn first. `Item::Background` is its own primitive:
+`MathBox::flatten` emits a box's backgrounds before its children and its other
+items, and `math-svg` paints every background before any glyph, rule or line,
+so the result does not depend on where the item sits in the list. The fill
+covers the padded box, including the frame area; the frame rules are painted
+over it in their own color, and an outer `\color` does not repaint either.
+
 ## Decorated operators and `\displaylimits`
 
 `\varlimsup`, `\varliminf`, `\varinjlim` and `\varprojlim` are amsmath's
@@ -366,6 +387,18 @@ or brace glyph.
 - The `math-svg` `constructs` example rendered a red/blue/green formula whose
   SVG parses as XML; glyphs carry the expected `fill` and both rules inside the
   blue scope carry it too.
+- `colorbox_background_sits_behind_the_text_and_the_border_keeps_its_color`
+  pins the `\fboxsep` + `\fboxrule` geometry, that the background is the first
+  item, and that all four frame rules use the border color; dropping the
+  background-first flatten order or sharing the background color with the frame
+  fails it.
+- `colorbox_arguments_are_text_and_write_back_their_commands` pins the
+  text-mode body, both written forms, the canonical re-parse and the
+  unknown-color diagnostic; parsing the body as math or swapping the frame and
+  background arguments fails it.
+- A manual `math-svg` render of `\colorbox{yellow}{Hi}+\fcolorbox{blue}{red}{X}`
+  parses as XML with the yellow and red fills before the text paths and four
+  blue frame rules after them.
 - `hspace_resolves_em_ex_and_mu_units` pins the three unit conversions and a
   negative length; changing the `mu` scale makes it fail.
 - `cancel_draws_one_diagonal_per_direction` pins the single-line and both-line
@@ -416,6 +449,14 @@ edits, `Origin::Macro` and the `Composition` node are in
   and nothing the writer could print back. The switch is a wrapper with a body
   slot, which is what KaTeX's `styling` node does; the scope test fails if the
   wrapper boundary moves.
+- **A background cannot reuse `Rule` with an earlier position.**
+  `MathBox::flatten` emits children before a box's own items, so a rule used as
+  a fill would cover the content it should sit behind; moving it earlier would
+  make the result depend on call order. `Item::Background` is a separate
+  primitive with its own paint pass.
+  `colorbox_background_sits_behind_the_text_and_the_border_keeps_its_color`
+  fails if the background stops preceding the content or the frame takes the
+  background color.
 - **A style switch could not stay a sibling of the next one.** Colors exposed
   the old rule: closing the previous switch when a new one starts loses scope
   for a `\color` that spans the boundary. Declarations are now a stack closed
