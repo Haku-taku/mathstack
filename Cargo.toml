@@ -1,0 +1,31 @@
+[workspace]
+default-members = [
+    "crates/math-core",
+    "crates/math-font",
+    "crates/math-svg",
+    "crates/math-syntax",
+]
+members = [
+    "crates/math-core",
+    "crates/math-diff",
+    "crates/math-editor",
+    "crates/math-editor-demo",
+    "crates/math-font",
+    "crates/math-svg",
+    "crates/math-syntax",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.85"
+
+[workspace.dependencies]
+math-core = { path = "crates/math-core" }
+math-editor = { path = "crates/math-editor" }
+math-font = { path = "crates/math-font" }
+math-svg = { path = "crates/math-svg" }
+math-syntax = { path = "crates/math-syntax" }
+ttf-parser = "0.25"

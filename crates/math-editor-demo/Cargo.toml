@@ -1,0 +1,21 @@
+[package]
+name = "math-editor-demo"
+description = "Native host demo for math-editor: eframe window, SVG rasterisation, real input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+math-core.workspace = true
+math-editor.workspace = true
+math-font.workspace = true
+math-svg.workspace = true
+eframe = { version = "0.36.2", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
+resvg = "0.46.0"
+tiny-skia = "0.11.4"

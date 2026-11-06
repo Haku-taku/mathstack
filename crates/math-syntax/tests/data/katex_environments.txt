@@ -1,0 +1,37 @@
+# KaTeX's supported-function list, reduced to the commands it names.
+# Source: https://github.com/KaTeX/KaTeX/blob/main/docs/supported.md (MIT),
+# fetched 2026-11-07. One control sequence per line; a line without a leading
+# backslash belongs to the environment list at the end of the file.
+Bmatrix
+Bmatrix*
+CD
+Vmatrix
+Vmatrix*
+align
+align*
+alignat
+alignat*
+aligned
+alignedat
+array
+bmatrix
+bmatrix*
+cases
+darray
+dcases
+drcases
+equation
+equation*
+gather
+gather*
+gathered
+matrix
+matrix*
+pmatrix
+pmatrix*
+rcases
+smallmatrix
+split
+subarray
+vmatrix
+vmatrix*

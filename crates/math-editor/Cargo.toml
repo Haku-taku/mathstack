@@ -1,0 +1,11 @@
+[package]
+name = "math-editor"
+description = "Host-side editing over the math model: caret, selection, keystrokes, IME and undo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+math-core.workspace = true
+math-syntax.workspace = true

@@ -1,0 +1,13 @@
+[package]
+name = "math-diff"
+description = "Differential geometry report against formulary"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+formulary = { version = "0.3", default-features = false }
+math-core.workspace = true
+math-font.workspace = true
+math-syntax.workspace = true

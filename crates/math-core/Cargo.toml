@@ -1,0 +1,9 @@
+[package]
+name = "math-core"
+description = "Model traits, style levels and row layout for the math stack"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
