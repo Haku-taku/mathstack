@@ -9,6 +9,7 @@ the repository builds against it.
 | File | What it is |
 | --- | --- |
 | `survey.md` | Synthesis across ten stacks: pipeline shapes, where spans die, editing architectures, font strategies, lessons |
+| `substitutability.md` | Which Rust reference framework this stack can replace, per use case, with the blocking gap named |
 | `architecture.md` | Target design: crates, model, layout, geometry, host contract, milestones, rejected alternatives |
 | `raw/js.md` | KaTeX, MathJax, Temml, MathLive, MathQuill — source-cited notes |
 | `raw/rust.md` | formulary, pulldown-latex, mathtex, ratex, Typst — source-cited notes |
