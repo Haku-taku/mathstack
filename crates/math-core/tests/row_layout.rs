@@ -1240,3 +1240,31 @@ fn table_boundaries_carry_rules_and_flush_spacing() {
     assert!(close(flush.width, 10.0));
     assert_eq!(glyphs(&flush), vec![(0.0, 6.0), (5.0, 6.0)]);
 }
+
+#[test]
+fn mathop_takes_limits_in_display_style() {
+    let (model, _) = Model::build(|m| {
+        let f = m.symbol('f');
+        let body = m.row(vec![f]);
+        let op = m.classed(
+            AtomClass::Op,
+            body,
+            Limits::Default {
+                display_limits: true,
+            },
+        );
+        let x = m.symbol('x');
+        m.scripts(op, None, Some(x))
+    });
+
+    // Limits go above and below in display style, so the subscript is centred
+    // under the base instead of widening it.
+    let display = measured(&model, Style::DISPLAY);
+    assert!(close(display.width, 5.0));
+    assert!(close(display.ascent, 6.0));
+
+    // Outside display style the same operator keeps its subscript at the side.
+    let text = measured(&model, Style::TEXT);
+    assert!(text.width > display.width);
+    assert!(close(text.ascent, 6.0));
+}

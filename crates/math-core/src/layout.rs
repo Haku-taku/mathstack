@@ -335,7 +335,39 @@ fn layout_kind(
             diagnostics,
         ),
         NodeKind::TableRow { cells } => layout_table_row(cx, cells, size, style, diagnostics),
+        // A style switch replaces the level for its body outright; a class
+        // wrapper changes only the atom class the enclosing row sees.
+        NodeKind::Styled { size: level, body } => {
+            let forced = Style {
+                size: *level,
+                cramped: false,
+            };
+            layout_wrapped(cx, *body, size, forced, diagnostics)
+        }
+        NodeKind::Class { body, .. } => layout_wrapped(cx, *body, size, style, diagnostics),
     }
+}
+
+/// A transparent wrapper: the body's metrics and ink, with itself as the only
+/// child so the wrapper has a box of its own to address.
+fn layout_wrapped(
+    cx: &Cx<'_>,
+    body: NodeId,
+    size: f32,
+    style: Style,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> MathBox {
+    let inner = layout_node(cx, body, size, style, diagnostics);
+    let mut out = MathBox {
+        width: inner.width,
+        ascent: inner.ascent,
+        descent: inner.descent,
+        italic: inner.italic,
+        lone_glyph: inner.lone_glyph,
+        ..MathBox::empty()
+    };
+    out.push_child(inner, 0.0, 0.0, Slot::Body);
+    out
 }
 
 fn layout_atom(
@@ -560,6 +592,13 @@ fn node_class(cx: &Cx<'_>, id: NodeId) -> AtomClass {
         NodeKind::Table { .. } | NodeKind::TableRow { .. } => AtomClass::Inner,
         NodeKind::Smash { body, .. } => node_class(cx, *body),
         NodeKind::OverUnder { base, .. } => node_class(cx, *base),
+        NodeKind::Class { class, .. } => *class,
+        // A style switch is transparent when it wraps one element, so the
+        // spacing either side still sees that element's class.
+        NodeKind::Styled { body, .. } => match cx.model.kind(*body) {
+            NodeKind::Row(children) if children.len() == 1 => node_class(cx, children[0]),
+            _ => AtomClass::Ord,
+        },
     }
 }
 
@@ -716,6 +755,12 @@ fn takes_limits(cx: &Cx<'_>, id: NodeId, display: bool) -> bool {
         NodeKind::LargeOp { limits, .. } | NodeKind::Function { limits, .. } => {
             limits.above_below(display)
         }
+        // `\mathop{…}` is an Op atom, so its own limits flag decides.
+        NodeKind::Class {
+            class: AtomClass::Op,
+            limits,
+            ..
+        } => limits.above_below(display),
         NodeKind::HorizontalBrace { .. } => true,
         _ => false,
     }

@@ -323,6 +323,17 @@ pub enum NodeKind {
         up: bool,
         down: bool,
     },
+    /// A style switch applied to the rest of its group (`\displaystyle`).
+    Styled {
+        size: Size,
+        body: NodeId,
+    },
+    /// An explicit atom class over a body (`\mathop{…}` and its siblings).
+    Class {
+        class: AtomClass,
+        body: NodeId,
+        limits: Limits,
+    },
     /// A matrix-style table: rows of cells sharing column widths.
     Table {
         rows: Vec<NodeId>,
@@ -449,7 +460,9 @@ impl NodeKind {
             | NodeKind::Phantom { body, .. }
             | NodeKind::Smash { body, .. }
             | NodeKind::Boxed { body }
-            | NodeKind::Cancel { body, .. } => vec![ChildSlot {
+            | NodeKind::Cancel { body, .. }
+            | NodeKind::Styled { body, .. }
+            | NodeKind::Class { body, .. } => vec![ChildSlot {
                 slot: if matches!(self, NodeKind::Accent { .. }) {
                     Slot::Base
                 } else {
@@ -616,6 +629,19 @@ impl NodeKind {
                 body: map(*body),
                 up: *up,
                 down: *down,
+            },
+            NodeKind::Styled { size, body } => NodeKind::Styled {
+                size: *size,
+                body: map(*body),
+            },
+            NodeKind::Class {
+                class,
+                body,
+                limits,
+            } => NodeKind::Class {
+                class: *class,
+                body: map(*body),
+                limits: *limits,
             },
             NodeKind::Table {
                 rows,
@@ -999,7 +1025,9 @@ impl Model {
             | NodeKind::Smash { body, .. }
             | NodeKind::Boxed { body }
             | NodeKind::Cancel { body, .. }
-            | NodeKind::HorizontalBrace { body, .. } => match slot {
+            | NodeKind::HorizontalBrace { body, .. }
+            | NodeKind::Styled { body, .. }
+            | NodeKind::Class { body, .. } => match slot {
                 Slot::Body => Some(std::mem::replace(body, child)),
                 _ => return Err(EditError::SlotNotEditable),
             },
@@ -1388,6 +1416,22 @@ impl ModelBuilder {
 
     pub fn cancel(&mut self, body: NodeId, up: bool, down: bool) -> NodeId {
         self.alloc(NodeKind::Cancel { body, up, down }, Span::default())
+    }
+
+    pub fn styled(&mut self, size: Size, body: NodeId) -> NodeId {
+        self.alloc(NodeKind::Styled { size, body }, Span::default())
+    }
+
+    /// A class wrapper; only an `Op` class reacts to `limits`.
+    pub fn classed(&mut self, class: AtomClass, body: NodeId, limits: Limits) -> NodeId {
+        self.alloc(
+            NodeKind::Class {
+                class,
+                body,
+                limits,
+            },
+            Span::default(),
+        )
     }
 
     pub fn table(

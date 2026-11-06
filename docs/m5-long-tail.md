@@ -98,6 +98,33 @@ style-inheriting table, `subarray` for a script table that carries an explicit
 alignment (`smallmatrix` has none to carry) and `alignedat` for a flush display
 table whose columns alternate.
 
+## Style switches and atom classes
+
+`\displaystyle`, `\textstyle`, `\scriptstyle` and `\scriptscriptstyle` scope
+over the rest of the group, as TeX's style nodes do. The parser keeps a pending
+switch while it reads a row and, at the row's end, wraps the siblings that
+followed in `Styled { size, body }`; a second switch closes the first, so
+`\displaystyle a\textstyle b` is two wrappers. A row is a group, so the wrapper
+closes before an infix fraction's denominator and stops at a closing brace. A
+style command in a position with no siblings (a one-atom argument) keeps an
+empty body. Layout lays the body with the named level and clears the cramped
+bit, as the named styles are uncramped; the wrapper gets a box of its own with
+the body as its only child, so a caret path can enter it. The writer prints the
+command and then the body without adding braces, which is the scope the source
+had. A single-element body keeps that element's class for the spacing either
+side; a longer body counts as Ord at the boundary, which is what KaTeX's
+styling group does.
+
+`\mathop`, `\mathbin`, `\mathrel`, `\mathord`, `\mathopen`, `\mathclose`,
+`\mathpunct` and `\mathinner` wrap one math argument in `Class { class, body,
+limits }`. Row spacing and `\mathop{…}\limits` see the wrapper's class rather
+than its body's node types: `\mathop` carries the display-limits default,
+`\limits`/`\nolimits` override it through the existing suffix path, and
+layout's `takes_limits` reads the wrapper. The other classes never take limits,
+so the suffix is a diagnostic after them. The writer prints the command, the
+argument and, for an `Op`, the non-default suffix, so the canonical form keeps
+an explicit class.
+
 ## Lengths and `\hspace`
 
 `\hspace` needs a width in a unit, so the model gained:
@@ -193,6 +220,14 @@ or brace glyph.
   the spacing fails it.
 - `matrix_environments_build_rows_and_cells` checks that `aligned` yields
   `[Right, Left]`; flipping either entry makes it fail.
+- `style_switch_scopes_to_the_end_of_its_group` pins that a switch covers the
+  rest of its group only and that a second switch closes the first; wrapping
+  the whole row or ignoring the scope start fails it.
+- `class_wrappers_keep_their_class_and_limits` pins each command's class and
+  `\mathop`'s display-limits default, and that `\limits` survives the writer.
+- `mathop_takes_limits_in_display_style` lays `\mathop{f}_x` at both styles:
+  the subscript is centred below in display style and beside in text style;
+  dropping the wrapper arm in `takes_limits` fails it.
 - `hspace_resolves_em_ex_and_mu_units` pins the three unit conversions and a
   negative length; changing the `mu` scale makes it fail.
 - `cancel_draws_one_diagonal_per_direction` pins the single-line and both-line
@@ -237,3 +272,15 @@ edits, `Origin::Macro` and the `Composition` node are in
   `Flush`) is now part of the table and selects `alignedat`, which also carries
   its pair count. `array_and_alignat_arguments_shape_the_table` asserts the
   canonical name, so dropping the flush flag makes it fail.
+- **Per-atom styling would have hidden the switch.** Rewriting the kinds or
+  styles of the atoms after `\displaystyle` would have changed their spacing
+  and drawing but left no node for the switch: no box to hit, no caret stop,
+  and nothing the writer could print back. The switch is a wrapper with a body
+  slot, which is what KaTeX's `styling` node does; the scope test fails if the
+  wrapper boundary moves.
+- **Following KaTeX's `\mathop` flag would put its limits at the side.** KaTeX
+  0.18.9 marks `\mathop` with `limits: false`, so its scripts stay beside even
+  in display style. TeX makes every Op atom `\displaylimits` by default, and
+  `\mathop{…}_x` in display style is expected above and below; the wrapper
+  therefore starts with `Default { display_limits: true }`, and
+  `mathop_takes_limits_in_display_style` pins the placement.

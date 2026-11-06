@@ -1,6 +1,6 @@
 use math_core::{
     Alignment, AtomClass, ColumnSpacing, FractionRule, Limits, Model, NodeId, NodeKind, Origin,
-    SpaceKind, Span, Style, Variant,
+    Size, SpaceKind, Span, Style, Variant,
 };
 use math_syntax::{
     CommandShape, command_shape, command_template, parse, to_latex, to_latex_with_spans,
@@ -181,6 +181,20 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
                 write_dump(model, *cell, out);
                 out.push(',');
             }
+            out.push(')');
+        }
+        NodeKind::Styled { size, body } => {
+            out.push_str(&format!("Styled({size:?},"));
+            write_dump(model, *body, out);
+            out.push(')');
+        }
+        NodeKind::Class {
+            class,
+            body,
+            limits,
+        } => {
+            out.push_str(&format!("Class({class:?},{limits:?},"));
+            write_dump(model, *body, out);
             out.push(')');
         }
         NodeKind::Error(text) => out.push_str(&format!("Error({text:?})")),
@@ -489,6 +503,13 @@ fn writer_round_trips_the_grammar() {
         "\\begin{subarray}{c}i<n\\\\n>0\\end{subarray}",
         "\\begin{alignat}{2}a&=b&c&=d\\end{alignat}",
         "\\begin{alignedat}{2}a&=b&c&=d\\end{alignedat}",
+        "a\\displaystyle b+c",
+        "{\\displaystyle a+b}c",
+        "\\mathop{f}_x",
+        "\\mathop{f}\\limits_x",
+        "\\mathop{f}\\nolimits_x",
+        "a\\mathbin{+}b",
+        "\\mathrel{x}\\mathord{y}",
         "\\stackrel{!}{=}",
         "\\substack{0<i<n\\\\i\\ne 1}",
         "\\cfrac{1}{1+\\cfrac{1}{x}}",
@@ -1261,4 +1282,86 @@ fn array_and_alignat_arguments_shape_the_table() {
 
     let aligned = parse("\\begin{aligned}a&=b\\end{aligned}");
     assert!(to_latex(&aligned.model, aligned.root()).starts_with("\\begin {aligned}"));
+}
+
+#[test]
+fn style_switch_scopes_to_the_end_of_its_group() {
+    // `\displaystyle` governs the rest of the group; `c` is outside it.
+    let document = parse("{\\displaystyle a+b}c");
+    let outer = row(&document.model, document.root());
+    assert_eq!(outer.len(), 2, "the `c` sits outside the group");
+    assert!(matches!(document.model.kind(outer[1]), NodeKind::Atom(_)));
+    let NodeKind::Row(group) = document.model.kind(outer[0]) else {
+        panic!("expected the braced group");
+    };
+    let NodeKind::Styled { size, body } = document.model.kind(group[0]) else {
+        panic!("expected a style wrapper");
+    };
+    assert_eq!(*size, Size::Display);
+    let NodeKind::Row(styled) = document.model.kind(*body) else {
+        panic!("expected the styled body row");
+    };
+    assert_eq!(styled.len(), 3, "the switch covers `a+b`");
+    assert!(document.to_latex().starts_with("{\\displaystyle a+b}c"));
+
+    // A second switch closes the first one and takes over the rest.
+    let document = parse("\\displaystyle a\\textstyle b");
+    let children = row(&document.model, document.root());
+    let sizes: Vec<Size> = children
+        .iter()
+        .map(|child| match document.model.kind(*child) {
+            NodeKind::Styled { size, .. } => *size,
+            other => panic!("expected a style wrapper, found {other:?}"),
+        })
+        .collect();
+    assert_eq!(sizes, vec![Size::Display, Size::Text]);
+}
+
+#[test]
+fn class_wrappers_keep_their_class_and_limits() {
+    let document = parse("\\mathop{f}_x");
+    let NodeKind::Scripts { base, .. } = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected scripts");
+    };
+    let NodeKind::Class { class, limits, .. } = document.model.kind(*base) else {
+        panic!("expected a class wrapper");
+    };
+    assert_eq!(*class, AtomClass::Op);
+    assert_eq!(
+        *limits,
+        Limits::Default {
+            display_limits: true
+        },
+        "`\\mathop` is a display-limits operator"
+    );
+    assert!(document.to_latex().starts_with("\\mathop {f}"));
+
+    // The suffix forces limits in every style and is written back.
+    let document = parse("\\mathop{f}\\limits_x");
+    let latex = document.to_latex();
+    assert!(latex.contains("\\limits"), "{latex}");
+    assert_eq!(document.diagnostics.len(), 0);
+
+    // Other commands select their own class.
+    for (source, expected) in [
+        ("\\mathbin{+}", AtomClass::Bin),
+        ("\\mathrel{-}", AtomClass::Rel),
+        ("\\mathord{x}", AtomClass::Ord),
+        ("\\mathopen{(}", AtomClass::Open),
+        ("\\mathclose{)}", AtomClass::Close),
+        ("\\mathpunct{,}", AtomClass::Punct),
+        ("\\mathinner{x}", AtomClass::Inner),
+    ] {
+        let document = parse(source);
+        let NodeKind::Class { class, .. } = document
+            .model
+            .kind(row(&document.model, document.root())[0])
+        else {
+            panic!("expected a class wrapper for {source}");
+        };
+        assert_eq!(*class, expected, "{source}");
+    }
 }

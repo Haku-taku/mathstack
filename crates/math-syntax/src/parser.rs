@@ -6,8 +6,9 @@ use crate::lexer::{Token, TokenKind};
 use crate::spellings::{Spelling, Spellings};
 use crate::symbols;
 use math_core::{
-    Alignment, Atom, ColumnSpacing, Diagnostic, FractionRule, Length, LengthUnit, Limits, Model,
-    ModelBuilder, NodeId, NodeKind, Origin, PhantomKind, Size, SpaceKind, Span, Style, Variant,
+    Alignment, Atom, AtomClass, ColumnSpacing, Diagnostic, FractionRule, Length, LengthUnit,
+    Limits, Model, ModelBuilder, NodeId, NodeKind, Origin, PhantomKind, Size, SpaceKind, Span,
+    Style, Variant,
 };
 
 /// LaTeX nesting a formula can plausibly use; deeper input is skipped rather
@@ -33,6 +34,8 @@ enum RowStep {
     StrayBrace(Span),
     StrayRight(Span),
     Infix(String, Span),
+    /// A style switch, which applies to the row's remaining children.
+    Style(String),
     Item,
 }
 
@@ -129,6 +132,8 @@ impl Parser<'_> {
         }
 
         let mut children = Vec::new();
+        // The style switch in effect and the row index where its scope starts.
+        let mut pending: Option<(Size, Span, usize, Origin)> = None;
         loop {
             if self.nodes >= MAX_NODES {
                 if !self.over_budget {
@@ -154,6 +159,9 @@ impl Parser<'_> {
                 TokenKind::Command(name) if is_infix(name) => {
                     RowStep::Infix(name.clone(), token.span)
                 }
+                TokenKind::Command(name) if style_size(name).is_some() => {
+                    RowStep::Style(name.clone())
+                }
                 _ => RowStep::Item,
             };
             match step {
@@ -167,7 +175,15 @@ impl Parser<'_> {
                     self.error(span, "`\\right` without `\\left`");
                 }
                 RowStep::Infix(name, command_span) => {
+                    self.close_style(&mut children, &mut pending);
                     return self.parse_infix(&name, command_span, start, children, depth, stop);
+                }
+                RowStep::Style(name) => {
+                    let token = self.advance().expect("peeked a command");
+                    let size = style_size(&name).expect("matched above");
+                    // The previous switch ends where this one starts.
+                    self.close_style(&mut children, &mut pending);
+                    pending = Some((size, token.span, children.len(), token.origin));
                 }
                 RowStep::Item => {
                     let item = self.parse_item(depth);
@@ -175,11 +191,47 @@ impl Parser<'_> {
                 }
             }
         }
+        self.close_style(&mut children, &mut pending);
 
         let end = children
             .last()
             .map_or_else(|| self.caret(), |child| self.span_of(*child).end);
         self.make(NodeKind::Row(children), Span::new(start, end.max(start)))
+    }
+
+    /// Wraps the siblings a style switch governs in its node. TeX scopes the
+    /// switch to the rest of the group, so whatever follows belongs to it.
+    fn close_style(
+        &mut self,
+        children: &mut Vec<NodeId>,
+        pending: &mut Option<(Size, Span, usize, Origin)>,
+    ) {
+        let Some((size, command_span, first, origin)) = pending.take() else {
+            return;
+        };
+        // A macro-expanded switch covers its call site, not the source that
+        // follows the expansion.
+        let expanded = origin != Origin::Source;
+        let body_children = children.split_off(first);
+        let end = if expanded {
+            command_span.end
+        } else {
+            body_children
+                .last()
+                .map_or(command_span.end, |child| self.span_of(*child).end)
+        };
+        let body = self.make(
+            NodeKind::Row(body_children),
+            Span::new(command_span.end, end.max(command_span.end)),
+        );
+        let node = self.make(
+            NodeKind::Styled { size, body },
+            Span::new(command_span.start, end.max(command_span.end)),
+        );
+        if expanded {
+            self.model.set_origin(node, origin);
+        }
+        children.push(node);
     }
 
     /// `\atop`, `\over` and the delimited variants consume the rest of the
@@ -347,6 +399,17 @@ impl Parser<'_> {
                 },
                 NodeKind::Function { name, .. } => NodeKind::Function {
                     name: name.clone(),
+                    limits,
+                },
+                // Only an explicit Op accepts the suffix; the other classes
+                // are not operators.
+                NodeKind::Class {
+                    class: AtomClass::Op,
+                    body,
+                    ..
+                } => NodeKind::Class {
+                    class: AtomClass::Op,
+                    body: *body,
                     limits,
                 },
                 _ => {
@@ -764,6 +827,34 @@ impl Parser<'_> {
                 let body = self.parse_argument(depth + 1, "\\boxed");
                 let end = self.span_of(body).end.max(span.end);
                 self.make(NodeKind::Boxed { body }, Span::new(span.start, end))
+            }
+            "mathord" | "mathop" | "mathbin" | "mathrel" | "mathopen" | "mathclose"
+            | "mathpunct" | "mathinner" => {
+                self.advance();
+                let class = class_command(name).expect("matched above");
+                let body = self.parse_argument(depth + 1, &format!("\\{name}"));
+                let end = self.span_of(body).end.max(span.end);
+                // `\mathop` alone takes limits in display style; the other
+                // classes never do, so the flag only matters for it.
+                let limits = Limits::Default {
+                    display_limits: class == AtomClass::Op,
+                };
+                self.make(
+                    NodeKind::Class {
+                        class,
+                        body,
+                        limits,
+                    },
+                    Span::new(span.start, end),
+                )
+            }
+            // A style switch reached outside a row (as a one-atom argument)
+            // has no siblings to scope over.
+            "displaystyle" | "textstyle" | "scriptstyle" | "scriptscriptstyle" => {
+                self.advance();
+                let size = style_size(name).expect("matched above");
+                let body = self.make(NodeKind::Row(Vec::new()), Span::empty(span.end));
+                self.make(NodeKind::Styled { size, body }, span)
             }
             "overset" | "underset" | "stackrel" => {
                 self.advance();
@@ -1923,4 +2014,30 @@ fn parse_length(text: &str) -> Option<Length> {
 
 fn is_infix(name: &str) -> bool {
     matches!(name, "atop" | "over" | "choose" | "brack" | "brace")
+}
+
+/// The level a style switch selects; the cramped flag is cleared, since TeX's
+/// `\displaystyle` and its siblings name the uncramped styles.
+fn style_size(name: &str) -> Option<Size> {
+    Some(match name {
+        "displaystyle" => Size::Display,
+        "textstyle" => Size::Text,
+        "scriptstyle" => Size::Script,
+        "scriptscriptstyle" => Size::ScriptScript,
+        _ => return None,
+    })
+}
+
+fn class_command(name: &str) -> Option<AtomClass> {
+    Some(match name {
+        "mathord" => AtomClass::Ord,
+        "mathop" => AtomClass::Op,
+        "mathbin" => AtomClass::Bin,
+        "mathrel" => AtomClass::Rel,
+        "mathopen" => AtomClass::Open,
+        "mathclose" => AtomClass::Close,
+        "mathpunct" => AtomClass::Punct,
+        "mathinner" => AtomClass::Inner,
+        _ => return None,
+    })
 }

@@ -7,8 +7,8 @@
 use crate::spellings::Spellings;
 use crate::symbols;
 use math_core::{
-    Alignment, Atom, ColumnSpacing, FractionRule, Length, LengthUnit, Limits, Model, NodeId,
-    NodeKind, Origin, Size, Span, Style,
+    Alignment, Atom, AtomClass, ColumnSpacing, FractionRule, Length, LengthUnit, Limits, Model,
+    NodeId, NodeKind, Origin, Size, Span, Style,
 };
 
 /// Where a node sits: a nested row in an item position needs braces to stay a
@@ -352,6 +352,31 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             push_command(out, "boxed");
             write_argument(model, *body, out);
         }
+        NodeKind::Styled { size, body } => {
+            push_command(
+                out,
+                match size {
+                    Size::Display => "displaystyle",
+                    Size::Text => "textstyle",
+                    Size::Script => "scriptstyle",
+                    Size::ScriptScript => "scriptscriptstyle",
+                },
+            );
+            // The body is the rest of the group, so its braces are the
+            // enclosing row's, not its own.
+            write(model, *body, Context::Argument, out);
+        }
+        NodeKind::Class {
+            class,
+            body,
+            limits,
+        } => {
+            push_command(out, class_name(*class));
+            write_argument(model, *body, out);
+            if *class == AtomClass::Op {
+                write_limits_suffix(*limits, out);
+            }
+        }
         NodeKind::Arrow {
             symbol,
             over,
@@ -677,6 +702,19 @@ fn uniform_alignment(columns: usize, alignment: &[Alignment]) -> Option<char> {
         return None;
     }
     Some(alignment_letter(first))
+}
+
+fn class_name(class: AtomClass) -> &'static str {
+    match class {
+        AtomClass::Ord => "mathord",
+        AtomClass::Op => "mathop",
+        AtomClass::Bin => "mathbin",
+        AtomClass::Rel => "mathrel",
+        AtomClass::Open => "mathopen",
+        AtomClass::Close => "mathclose",
+        AtomClass::Punct => "mathpunct",
+        AtomClass::Inner => "mathinner",
+    }
 }
 
 fn alignment_letter(alignment: Alignment) -> char {
