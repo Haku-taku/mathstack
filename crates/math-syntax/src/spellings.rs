@@ -40,6 +40,9 @@ pub(crate) enum SpellingKind {
     Middle {
         symbol: char,
     },
+    Text {
+        content: String,
+    },
 }
 
 impl Spelling {
@@ -71,6 +74,9 @@ impl Spelling {
                 class: *class,
             },
             NodeKind::Middle { symbol } => SpellingKind::Middle { symbol: *symbol },
+            NodeKind::Text(content) => SpellingKind::Text {
+                content: content.clone(),
+            },
             _ => return None,
         };
         Some(Spelling { text, kind })
@@ -119,6 +125,7 @@ impl Spelling {
             (SpellingKind::Middle { symbol }, NodeKind::Middle { symbol: current }) => {
                 symbol == current
             }
+            (SpellingKind::Text { content }, NodeKind::Text(current)) => content == current,
             _ => false,
         }
     }

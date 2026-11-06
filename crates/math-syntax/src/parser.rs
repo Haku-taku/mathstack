@@ -430,6 +430,7 @@ impl Parser<'_> {
             NodeKind::Atom(_)
                 | NodeKind::LargeOp { .. }
                 | NodeKind::Function { .. }
+                | NodeKind::Text(_)
                 | NodeKind::Space(_)
         );
         let span = if whole { self.model.span(id) } else { token };
@@ -1160,7 +1161,10 @@ impl Parser<'_> {
     /// nested groups survive; commands inside are literal for now.
     fn parse_text(&mut self, span: Span) -> NodeId {
         match self.text_argument("\\text", span) {
-            TextArgument::Text(text, span) => self.make(NodeKind::Text(text), span),
+            TextArgument::Text(text, span) => {
+                let decoded = decode_text(&text);
+                self.make(NodeKind::Text(decoded), span)
+            }
             TextArgument::Unavailable(span) => {
                 self.make(NodeKind::Error("\\text".to_owned()), span)
             }
@@ -1423,6 +1427,55 @@ impl Environment {
             Environment::Aligned => None,
         }
     }
+}
+
+/// Text mode's escapes: `\{` and `\textbackslash` become the characters they
+/// name, grouping braces disappear, and an unknown command stays literal.
+fn decode_text(raw: &str) -> String {
+    let mut out = String::new();
+    let mut chars = raw.chars().peekable();
+    while let Some(symbol) = chars.next() {
+        match symbol {
+            '\\' => {
+                let Some(&next) = chars.peek() else {
+                    out.push('\\');
+                    break;
+                };
+                if next.is_ascii_alphabetic() {
+                    let mut name = String::new();
+                    while let Some(&letter) = chars.peek() {
+                        if !letter.is_ascii_alphabetic() {
+                            break;
+                        }
+                        name.push(letter);
+                        chars.next();
+                    }
+                    match symbols::text_command(&name) {
+                        Some(symbol) => out.push(symbol),
+                        None => {
+                            out.push('\\');
+                            out.push_str(&name);
+                        }
+                    }
+                } else {
+                    chars.next();
+                    match next {
+                        '{' | '}' | '%' | '$' | '&' | '#' | '_' => out.push(next),
+                        ' ' | ',' | ';' | ':' => out.push(' '),
+                        '!' => {}
+                        _ => {
+                            out.push('\\');
+                            out.push(next);
+                        }
+                    }
+                }
+            }
+            '{' | '}' => {}
+            '~' => out.push(' '),
+            _ => out.push(symbol),
+        }
+    }
+    out
 }
 
 /// A delimiter argument: empty or `.` is the null delimiter, a bare character

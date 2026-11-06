@@ -105,7 +105,7 @@ stack overflow or an unbounded allocation into a diagnostic.
 
 Semantics alone cannot distinguish `\pm` from `±`, `\le` from `\leq`, or a
 font-command atom from its bare letter. A `Document` therefore carries a
-`Spellings` side table: the parser records the token for atoms, large
+`Spellings` side table: the parser records the token for atoms, text, large
 operators, functions, spaces, accents, sized delimiters and `\middle`, keyed
 by node id and tagged with the shape it described. `Document::to_latex` emits
 that token while the node still matches; an edited, synthesized or

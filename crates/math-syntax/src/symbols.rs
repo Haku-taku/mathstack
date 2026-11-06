@@ -405,6 +405,36 @@ pub(crate) fn large_op(name: &str) -> Option<(char, bool)> {
     Some(operator)
 }
 
+/// A command that stands for one character inside `\text{…}`. Names are the
+/// LaTeX text-mode escapes; unknown commands stay literal.
+pub(crate) fn text_command(name: &str) -> Option<char> {
+    let symbol = match name {
+        "textbackslash" => '\\',
+        "textbar" => '|',
+        "textless" => '<',
+        "textgreater" => '>',
+        "textasciitilde" => '~',
+        "textasciicircum" => '^',
+        "textunderscore" => '_',
+        "textbraceleft" => '{',
+        "textbraceright" => '}',
+        "textquotedblleft" => '“',
+        "textquotedblright" => '”',
+        "textquoteleft" => '‘',
+        "textquoteright" => '’',
+        "textendash" => '–',
+        "textemdash" => '—',
+        "textellipsis" | "ldots" | "dots" => '…',
+        "cdots" => '⋯',
+        "textdollar" => '$',
+        "textpercent" => '%',
+        "textampersand" => '&',
+        "textnumbersign" => '#',
+        _ => return None,
+    };
+    Some(symbol)
+}
+
 /// A delimiter command; `.` as a literal symbol is the null delimiter.
 pub(crate) fn delimiter(name: &str) -> Option<char> {
     match name {

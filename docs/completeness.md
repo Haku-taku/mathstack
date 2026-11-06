@@ -68,7 +68,7 @@ cargo test -p math-syntax --test completeness -- --nocapture
 Regenerating the baseline is an explicit act, not a side effect:
 
 ```sh
-KATEX_BASELINE=crates/math-syntax/tests/data/katex_accepted.txt \
+KATEX_BASELINE="$PWD/crates/math-syntax/tests/data/katex_accepted.txt" \
   cargo test -p math-syntax --test completeness katex_supported_list
 ```
 

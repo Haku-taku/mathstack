@@ -286,8 +286,26 @@ fn commands_map_to_the_model() {
     let root = document.root();
     assert!(matches!(
         row(model, root).first().map(|id| model.kind(*id)),
-        Some(NodeKind::Text(text)) if text == "a {b} c"
+        Some(NodeKind::Text(text)) if text == "a b c"
     ));
+}
+
+#[test]
+fn text_mode_decodes_escapes_and_keeps_the_source() {
+    let source = "\\text{100\\% \\{x\\} \\textbackslash~y}";
+    let document = parse(source);
+    let NodeKind::Text(text) = document
+        .model
+        .kind(row(&document.model, document.root())[0])
+    else {
+        panic!("expected a text node");
+    };
+    assert_eq!(text, "100% {x} \\ y");
+    assert_eq!(document.to_latex(), source);
+    assert_eq!(
+        to_latex(&document.model, document.root()),
+        "\\text{100\\% \\{x\\} \\textbackslash{} y}"
+    );
 }
 
 #[test]
@@ -414,6 +432,10 @@ fn writer_round_trips_the_grammar() {
         "\\newcommand{\\sq}[1]{#1^2}\\sq{x}",
         "\\text{if }x",
         "\\text{a {b} c}+d",
+        "\\text{100\\%}+\\text{a \\{b\\} c}",
+        "\\text{\\textbackslash{}~\\textasciitilde{}~\\textasciicircum{}}",
+        "\\text{$5 & 6 #7 _8}",
+        "\\operatorname{rank} A",
         "a\\,b",
         "a\\;+b",
         "\\quad x",

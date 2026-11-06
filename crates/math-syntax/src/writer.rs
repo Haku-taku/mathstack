@@ -204,11 +204,14 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
         NodeKind::Composition(_) => {
             // A live preedit is not part of the document; commit replaces it.
         }
-        NodeKind::Text(text) => {
-            out.push_str("\\text{");
-            out.push_str(text);
-            out.push('}');
-        }
+        NodeKind::Text(text) => match out.spelling(model, id) {
+            Some(token) => out.push_token(&token),
+            None => {
+                out.push_str("\\text{");
+                write_text(text, out);
+                out.push('}');
+            }
+        },
         NodeKind::Function { name, limits } => {
             match out.spelling(model, id) {
                 Some(text) => out.push_token(&text),
@@ -567,6 +570,23 @@ fn write_atom(atom: &Atom, out: &mut Output<'_>) {
             out.push('}');
         }
         None => write_symbol(atom.symbol, out),
+    }
+}
+
+/// Escapes semantic text back into text mode; grouping braces never reach the
+/// node, so braces here are literal.
+fn write_text(text: &str, out: &mut Output<'_>) {
+    for symbol in text.chars() {
+        match symbol {
+            '{' | '}' | '%' | '$' | '&' | '#' | '_' => {
+                out.push('\\');
+                out.push(symbol);
+            }
+            '\\' => out.push_str("\\textbackslash{}"),
+            '~' => out.push_str("\\textasciitilde{}"),
+            '^' => out.push_str("\\textasciicircum{}"),
+            _ => out.push(symbol),
+        }
     }
 }
 

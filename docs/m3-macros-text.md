@@ -82,11 +82,15 @@ therefore shows TeX's short bar over a wide base rather than an overline.
 
 ## Text
 
-`\text{…}` stores the raw source between its braces as `Text(String)`: spaces
-survive, nested groups survive, and commands inside are literal for this
-milestone. A `\text` written inside a macro body has no recoverable source (its
-tokens carry the call span), so it reports a diagnostic and becomes an `Error`
-node; text passed as a macro argument is not preserved either. Layout now shapes the text through `TextShaper`. The core fallback,
+`\text{…}` stores decoded display text as `Text(String)`: text-mode escapes
+such as `\%`, `\{`, `\textbackslash` and `\textasciitilde` become their
+characters, grouping braces disappear, and `~` becomes a space. An unknown
+command stays literal. The raw slice between the braces is kept in `Spellings`
+for the whole node, so export reproduces what the user wrote; canonical export
+re-escapes the decoded text. A `\text` written inside a macro body has no
+recoverable source (its tokens carry the call span), so it reports a diagnostic
+and becomes an `Error` node; text passed as a macro argument is not preserved
+either. Layout now shapes the text through `TextShaper`. The core fallback,
 `FontShaper`, draws upright glyphs one per character with the face's advances
 and ink, so spaces take width but paint nothing; a missing glyph reports a
 diagnostic with the node's span. A host that wants kerning, ligatures or font
