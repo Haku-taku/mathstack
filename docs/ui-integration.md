@@ -1,130 +1,130 @@
-# Replacing the UI's LaTeX pipeline
+# The UI's LaTeX pipeline
 
-This page records where `crabsnap-ng` turns LaTeX into a display list, what
-`mathstack` would have to provide to stand in, and which parts of the contract
-the current stack does not yet meet. It is a 7.1 investigation: nothing in the
-UI repository has been changed.
+`crabsnap-ng`'s formula path now runs on this stack. `ui-math` parses LaTeX with
+`math-syntax`, lays it out with `math-core` over a `math-font` face, and converts
+the result to `ui_core::Formula`; the MathML stage and `formulary` are gone.
+The public seam did not move, so no widget, Markdown or engine-context code
+changed in the swap.
 
-## The pipeline as it stands
+## Where the seam sits
 
-`ui-math` owns both third-party libraries, so nothing above it sees their
-types. Its path is LaTeX → MathML → formulary tree → `ui_core::Formula`:
+- `ui/crates/ui-core/src/math.rs:51` — `Formula` (width, ascent, descent, items,
+  errors) and `ui-core/src/math.rs:114` `MathItem` (glyph, rule, background,
+  line) are the contract above the seam.
+- `ui/crates/ui-platform/src/text_pass.rs:500` — `TextPass::layout_math`
+  implements the engine's layout trait, caching by (fonts version, family,
+  source, size, display, error colours). `text_pass.rs:589` turns a formula
+  into paint primitives, `text_pass.rs:129` places a stroked line.
+- Faces are resolved by family, admitted to the rasterizer, and their bytes are
+  leaked once so the borrowed face outlives the pass.
+- Callers are unchanged: `ui_widgets::Math`, Markdown's `MathEditing`,
+  inline objects in `ui-richtext`, and the wrappers in `ui-widgets-md3`,
+  `ui-widgets-fluent` and `ui-widgets-glass`.
 
-- `ui/crates/ui-math/src/math.rs:70` — `MathFace::new` parses a formulary
-  `MathFont` once per face; it borrows the font bytes.
-- `ui/crates/ui-math/src/math.rs:75` — `layout` is the strict path: any
-  `pulldown-latex` diagnostic is an `Error::Latex`.
-- `ui/crates/ui-math/src/math.rs:87` — `layout_recovering` repairs missing
-  closers/arguments, writes `<merror>` for refused tokens, then lays the
-  MathML out. `ui/crates/ui-math/src/math.rs:485` converts formulary's items
-  to `MathItem` and turns the tagged error boxes into `MathErrorMark`s.
-- `ui/crates/ui-math/src/math.rs:445` — `probe` reports whether a face has a
-  MATH table, without laying anything out.
-- `ui/crates/ui-core/src/math.rs:51` — `Formula` (width, ascent, descent,
-  items, errors) and `ui-core/src/math.rs:116` `MathItem` (glyph, rule,
-  background) are the contract above the seam.
-- `ui/crates/ui-core/src/cx.rs:47` — the engine context exposes `layout` as a
-  trait; `ui-core/src/cx.rs:329` forwards to the host. `ui-platform`'s
-  `TextPass::layout_math` implements it at
-  `ui/crates/ui-platform/src/text_pass.rs:460`, caching by (fonts version,
-  family, source, size, display, error colours).
-- Faces are resolved by family, admitted to the rasterizer, and their bytes
-  are leaked once so the borrowed `MathFace` outlives the pass
-  (`text_pass.rs:522`).
-- Callers are `ui_widgets::Math` (`ui-widgets/src/math.rs:100`), `MathField`
-  (source line plus preview), Markdown's `MathEditing::{Source, InPlace}`
-  (`ui-widgets/src/markdown.rs:84`), inline objects in `ui-richtext`, and the
-  per-pack wrappers in `ui-widgets-md3`, `ui-widgets-fluent` and
-  `ui-widgets-glass`.
+## The path inside `ui-math`
 
-The smallest boundary is therefore **inside `ui-math`**: keep `MathFace`,
-`layout`, `layout_recovering`, `probe`, `Error` and the `ui-core` types, and
-replace the LaTeX/MathML/formulary body with `math-syntax` + `math-font` +
-`math-core`. No widget, Markdown or engine-context code has to change.
+`ui/crates/ui-math/src/math.rs` is the whole adapter:
+
+- `MathFace::new` (line 58) parses the bytes with `math_font::Face` and refuses
+  a face without a MATH table, so the error is reported once per face.
+- `layout` (line 67) is the strict path: any parse or layout diagnostic is
+  `Error::Latex`.
+- `layout_recovering` (line 93) keeps the structure around refused runs. Every
+  diagnostic whose kind is not `Incomplete` becomes a `MathErrorMark`, and its
+  rectangle is the smallest laid-out node covering the diagnostic's span
+  (`mark_rect`), not just an error node the parser may or may not have made.
+  `mark_items` draws the optional panel and a hairline border in the formula's
+  own ink when no pack style is given.
+- `probe` (line 259) reads the table directory only, so a font list can be
+  scanned without laying anything out.
 
 ## Mapping
 
-| `ui-math` contract | `mathstack` | Note |
+| `ui-math` item | `math_core::Item` | Note |
 | --- | --- | --- |
-| `MathFace::new(bytes, index)` | `math_font::Face::parse(bytes, index)` | both borrow the bytes; the face must carry a MATH table |
-| `probe(bytes, index)` | new `Face::has_math()` over `ttf_parser`'s table directory | currently no public predicate |
-| `layout` (strict) | `math_syntax::parse` + `layout_with_geometry`; any diagnostic → `Error::Latex` | mathstack's parser recovers rather than aborting, so strictness is the adapter's decision |
-| `layout_recovering` | the same parse + layout; diagnostics that only say a group is incomplete are not marks | needs a structured diagnostic kind, see below |
-| `Formula.width/ascent/descent` | `Layout` of the same names | |
-| `MathItem::Glyph` | `math_core::Item::Glyph` | `advance` from `Face::advance`; `color` from the item; `mirrored: false` |
-| `MathItem::Rule` | `math_core::Item::Rule` (`y` is the top edge) | |
-| `MathItem::Background` | `math_core::Item::Background` (`\colorbox`/`\fcolorbox`) | paint it before glyphs, rules and lines |
-| `Formula.errors` | `Error` nodes' geometry (`Geometry::rect_of`) plus the diagnostic for that span | message text comes from `Diagnostic::message` |
-| `MathError::NoFace` | face parsing failure | |
-| `MathError::Failed` | layout failure | |
+| `Glyph` | `Glyph` | glyph id is the raw OpenType index; `advance` is 0 and `mirrored` false |
+| `Rule` | `Rule` | `y` is the top edge in both |
+| `Background` | `Background` | put before glyphs, rules and lines |
+| `Line` | `Line` | endpoints and thickness, `color` optional |
+| `Formula.errors` | diagnostics + `Geometry` | `Incomplete` is not a mark; every other kind is |
 
-Glyph ids are raw OpenType indices in both stacks (`math_font` forwards
-`ttf_parser`'s `GlyphId`), and the text pass rasterizes with the same face
-bytes, so the ids belong to the face the painter will use. This is the one
-assumption the adapter must test first on a real system face.
+Glyph ids belong to the face the painter rasterizes because both sides use the
+same bytes. This was checked on the system face the tests select
+(`a_fraction_adds_depth_and_a_bar` finds exactly two glyphs at script size).
 
-## Gaps that need a decision before 7.2
+## The line primitive
 
-1. **Structured diagnostics — resolved.** `math_core::Diagnostic` now carries a
-   `kind` (`Incomplete`, `UnknownCommand`, `Layout`, `Other`) beside the
-   message. `\frac{1}{1+` reports only `Incomplete`; `\frc` reports
-   `UnknownCommand`; layout refusals report `Layout`. The adapter maps
-   `Incomplete` to no error mark and every other kind to one, so no message
-   matching is needed.
-2. **Cancellation lines — approved, not yet implemented.** `math_core::Item::Line`
-   is emitted by `\cancel`; the UI will gain a stroked (rotated) segment in
-   `ui-core`, the rasterizer and the math paint path, so the replacement keeps
-   cancellation lines instead of dropping them.
-3. **Colours.** `\color`/`\textcolor` now reach `Item::Glyph.color`,
-   `Item::Rule.color` and `Item::Line.color` as `math_core::Color`. Both
-   `MathItem::Glyph` and `MathItem::Rule` already carry `color: Option<Color>`
-   (`ui-core/src/math.rs`), so the adapter maps each directly; only the
-   stroked line has no UI counterpart, as the cancellation gap notes.
-4. **RTL mirroring.** MathML can ask for mirrored glyphs; mathstack has no
-   RTL input, so `mirrored` is always false. The paint path already refuses a
-   mirrored item, so there is no regression, only a capability it never had.
-5. **Error-mark geometry.** `layout_recovering` needs a rectangle for a
-   refused run. mathstack has it: the `Error` node is laid out and
-   `Geometry::rect_of` returns its box. The adapter must walk the model,
-   not just the diagnostics, and must keep the reading order the UI uses for
-   messages.
+`\cancel` used to be dropped at the UI boundary. The engine now draws lines:
+`ui_core::math::MathItem::Line` (`ui-core/src/math.rs:138`),
+`ui-core::draw::LinePrim` (`draw.rs:221`), `PrimKind::Line` (`draw.rs:781`),
+and `Primitives::push_line` (`draw.rs:1181`). `text_pass` maps both formula and
+inline math lines from formula space to the widget's box. The CPU rasterizer
+covers the segment with a signed-distance stroke (`ui-paint/src/lib.rs:591`);
+the GPU backend uses a per-kind program and two shaders
+(`ui-paint-gpu/src/shaders/line.{vert,frag}.glsl`,
+`ui-paint-gpu/src/renderer.rs:2120`). `gpu_scene` draws a diagonal and checks
+the two backends agree; the largest difference is 1 LSB.
 
-## Work plan for 7.2 and 7.3
+## Verification
 
-1. In mathstack: `DiagnosticKind` and `Face::has_math` are done; keep the text
-   for the host and map incomplete input in the adapter.
-2. In `ui-math`: replace the internals, keep the public API and `Error`
-   variants; dependencies become `math-core`, `math-syntax`, `math-font`
-   (drop `formulary` and `pulldown-latex`, which no other crate uses).
-3. Run `ui-math`'s four behavioural tests unchanged first; they assert
-   structure (a fraction is taller, scripts are smaller, a mistyped command
-   keeps the fraction, an unclosed group is repaired, a text face is
-   refused), not exact formulary metrics.
-4. Re-baseline expected extents wherever a test pins them. The m1
-   differential already records where this stack and formulary choose
-   different rules; 11 of 19 formulas agree within 0.01 pt.
-5. Remove the old path and update `docs/src/crate-map.md`; run the UI suite,
-   the gallery's math pages in a nested release session, and compare a
-   formula's pixels before/after for shapes whose widths legitimately differ.
-6. Keep the replacement on a local branch until the user accepts the visual
-   and metric differences; the repository's no-push rule applies.
+Run in `ui/` unless noted:
 
-## What the UI would gain
+| Command | Result |
+| --- | --- |
+| `cargo test -p ui-math` | 5 tests green, including `a_cancel_draws_its_diagonal` |
+| `cargo test --workspace --no-fail-fast` | exit 0 |
+| nested release `gpu_scene` | every invariant holds; 3 draw calls (rects, line, glyphs) |
+| release gallery, math pages | formulas render; `\cancel`/`\bcancel`/`\xcancel` strokes visible in a screenshot |
 
-Beyond removing two dependencies, the replacement exposes a node tree with
-byte spans and geometry. That is the substrate the math-editor spike said was
-missing for tier ② (structural editing): `math-editor` already provides
-caret paths, empty-slot rectangles and hit testing on the same layout. The
-current UI edits a formula through a source line (`MathField`), so structural
-editing remains a product decision, not part of the pipeline swap.
+The four original `ui-math` tests ran unchanged and passed: they assert
+structure (a fraction is taller, scripts are smaller, a mistyped command keeps
+the fraction, an unclosed group is repaired, a text face is refused), not
+exact metrics. The new test pins the diagonal's existence and inherited ink.
+
+Parse plus layout costs 0.9–3.2 µs per formula on DejaVu Math TeX Gyre (row,
+scripts, fraction, root, integral, matrix; 2000 rounds in a temporary release
+example). For the same shapes `formulary` costs 0.8–2.1 µs starting from
+MathML, so this stack is 1.2–1.9× slower and pays no LaTeX→MathML stage in
+exchange. Both figures are far below a frame budget, and the text pass caches
+by source anyway.
+
+## Remaining gaps
+
+- Structural editing is not wired to the UI yet (7.5), and neither are the
+  Markdown source/popover modes (7.6) or the editable-container entries (7.7).
+  The pipeline replacement is complete without them.
+- The editor cannot yet reach environments that take their own arguments
+  (`array`, `matrix*`, `alignat`), and an environment name or `\hspace` length
+  cannot be edited after insertion. `\pmod` exports as its expansion, so its
+  source spelling is not preserved.
+- `mirrored` is always false: mathstack has no RTL input. The paint path
+  already refused mirrored items, so nothing regressed.
+- There is no rollback branch. The `crabsnap-ng` checkout is not a git
+  repository, so the previous `math.rs` was replaced in place. Its dependencies
+  (`formulary 0.3.0`, `pulldown-latex 0.8.0`) are named here, but restoring the
+  old path means rewriting the adapter, not checking out a branch.
+- The full gallery self-test still reports failures in the Markdown page
+  (task-list boxes and two caret-column checks). They concern Markdown cell
+  geometry, not formula layout, and are `[unverified]` as to whether they
+  predate the swap.
+
+## Corrections
+
+**"Nothing in the UI repository has been changed" (7.1).** That was true of the
+investigation, not of the plan. 7.2c added the line primitive and 7.2d replaced
+the adapter; the line primitive landed first so the adapter never had to drop a
+`Line` item.
+
+**"The smallest boundary is inside `ui-math`" held.** No caller changed. The
+only UI-wide additions were the line primitive and its paint paths, which the
+formula contract needed regardless of which layout engine produced the items.
 
 ## How each claim was checked
 
-- File and line references were read from the working tree on 2026-11-07.
-- The contract list comes from `ui-core/src/math.rs` and `cx.rs`; callers come
-  from a workspace-wide search for `ui_math`/`math_layout`.
-- The diagnostic shapes were reproduced with mathstack's parser
-  (`\frac{1}{1+`, `\frac{1}{1+\frc{1}{n}}`); `ui-math`'s expected behaviour is
-  its own test `an_unclosed_group_still_lays_out_the_structure_above_it`.
-- No UI code was modified; no release or graphical run was needed for this
-  investigation.
+- File and line references were read from the working trees on 2026-11-07.
+- The contract and callers come from a workspace search for
+  `ui_math`/`math_layout`; the test and build results are the commands in the
+  table above, run on the same date.
+- The recovery behaviour was reproduced with `\frac{1}{1+` (no mark) and
+  `\frac{1}{1+\frc{1}{n}}` (one mark in the denominator); `ui-math`'s tests
+  assert both.

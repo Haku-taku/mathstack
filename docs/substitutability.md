@@ -149,12 +149,12 @@ geometry differential grew from 16 to 19 formulas. The remaining capability
 gaps are the table above: `\multicolumn`, `CD`, top-level line breaks,
 long-tail symbols, and the MathML/event/full-TeX surfaces.
 
-**Capability is not integration.** The crabsnap-ng UI still runs `ui-math`'s
-pulldown-latex → MathML → formulary path. `ui-integration.md` records the seam
-and the prerequisites: structured diagnostics, a stroked line primitive for
-`\cancel`, and a decision on structural editing. The swap (7.2/7.3) crosses
-repositories and waits for the user's decision. Until then this page answers
-what the stack *can* do, not what the application already uses.
+**Capability is not just a report any more.** The crabsnap-ng UI now runs this
+stack: `ui-math` parses with `math-syntax`, lays out with `math-core`, and
+converts to `ui_core::Formula`, including stroked lines for `\cancel`. The
+remaining integration work is structural editing and the Markdown editing
+modes, not the rendering path. `ui-integration.md` records the seam, the
+mapping and what is left.
 
 The exclusions are boundaries, not missing polish: a MathML front end, an
 event API, a TeX engine and the complete KaTeX surface are different products.

@@ -73,8 +73,9 @@ design document carries a `## Corrections` paragraph.
 
 ## Not changed
 
-The crabsnap-ng pipeline is untouched; `ui-integration.md` still records the
-seam and the prerequisites for 7.2/7.3. This pass changed only mathstack.
+This audit changed only mathstack. The `ui-math` swap landed afterwards and
+does not touch the model-to-LaTeX boundary these findings concern;
+`ui-integration.md` records the seam and the adapter.
 
 ## Verification
 
