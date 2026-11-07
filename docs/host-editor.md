@@ -361,9 +361,10 @@ host depends on:
   in the middle of the cell it reserves;
 - `a_press_on_a_radicand_stays_in_the_radicand` — a radical's degree does not
   take the radicand's presses, and the hit names a caret the layout draws;
-- `spans_describe_the_export_from_construction` and
-  `offsets_follow_the_export_and_accept_a_host_selection` — offsets from
-  `Editor::new` name the export the writer produces, not the parsed source;
+- `offsets_name_the_text_the_host_holds` and
+  `the_hosts_last_byte_reaches_the_formulas_last_characters` — offsets from
+  `Editor::new` name the bytes the host gave the editor, the first edit moves
+  them to the export, and the host's last byte is the formula's last stop;
 - `table_cells_survive_text_deletion` — clearing every cell and deleting a
   selection across a matrix row leave its cells and separators in place;
 - `copying_a_parsed_subtree_preserves_its_structure` — a broad formula
@@ -514,12 +515,23 @@ another key. This is a manual check, not a golden-image gate.
   command's kind, so `\sqrt[3]{}` keeps its filled degree while
   `\sqrt[]{}` goes. Pinned by
   `backspace_removes_a_command_whose_slots_are_all_empty`.
-- **Offsets named the parsed source, not the export.** `Editor::new` skipped
-  the span normalization that every relayout runs, so the offset seam mixed
-  parser spans (which start at a group's brace) with the writer's export; a
-  stop could name an offset that is not a character boundary of `source()`.
-  Spans are now normalized at construction. Pinned by
-  `spans_describe_the_export_from_construction`.
+- **Offsets named the export while the host's buffer still held the source.**
+  Normalizing spans at construction fixed a real bug — the parser spans a braced
+  argument as `{1}`, so a stop could name a byte that was not a character
+  boundary — but it made every offset name the writer's text, which the host
+  only receives once it splices an edit in. Until then the two differ: the
+  writer terminates commands with a space and braces scripts, so
+  `\int_0^1 x^2 \, dx` exports four bytes longer than it was written. A host
+  offset at the payload's end then named a stop inside the formula, its last
+  characters could not be selected, and a bare arrow key spliced the export into
+  the host's source just to line the two up. The editor now keeps the input text
+  and each node's span in it, one surrounding brace pair trimmed, and names that
+  text while the model still matches what was parsed; the first edit that
+  changes the model switches the seam to the export, which is the text the host
+  splices in. Pinned by `offsets_name_the_text_the_host_holds` (the same stop at
+  byte 9, then at 10 after an edit) and
+  `the_hosts_last_byte_reaches_the_formulas_last_characters` (red: the caret
+  landed on the `\,` space instead of the formula's last stop).
 - **Selection deletion stopped inside a required slot.** Deleting a range
   walked backwards one leaf at a time, so a selected fraction was emptied and
   left behind; the replacement was then inserted before it. Range deletion now

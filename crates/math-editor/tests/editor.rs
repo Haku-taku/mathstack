@@ -288,7 +288,11 @@ fn a_cut_selection_round_trips_through_the_clipboard() {
     assert_eq!(copied, expected);
     assert_eq!(editor.source(), "");
     assert!(editor.insert_latex(&copied, &FakeFont));
-    assert_eq!(editor.source(), expected);
+    assert_eq!(
+        editor.source(),
+        source,
+        "pasting the export back restores the spelling the model came from"
+    );
 }
 
 #[test]
@@ -552,7 +556,11 @@ fn empty_slots_leave_without_deleting_their_base() {
     let mut fraction = editor("\\frac{}{x}");
     assert!(fraction.click(Point { x: 3.0, y: 2.0 }, false));
     assert!(press(&mut fraction, Key::Backspace));
-    assert_eq!(fraction.source(), "\\frac {}{x}");
+    assert_eq!(
+        fraction.source(),
+        "\\frac{}{x}",
+        "nothing changed, so the host's own spelling stands"
+    );
 
     // An empty degree is optional too; its content deletes first.
     let mut radical = editor("\\sqrt[3]{x}");
@@ -633,7 +641,7 @@ fn backspace_removes_a_command_whose_slots_are_all_empty() {
     let mut filled = editor("\\sqrt[3]{}");
     assert!(filled.click(Point { x: 10.0, y: 10.0 }, false));
     assert!(press(&mut filled, Key::Backspace));
-    assert_eq!(filled.source(), "\\sqrt [3]{}");
+    assert_eq!(filled.source(), "\\sqrt[3]{}");
 }
 
 #[test]
@@ -656,13 +664,19 @@ fn table_cells_survive_text_deletion() {
 
 #[test]
 fn a_cut_environment_keeps_its_name() {
-    let mut editor = editor("\\begin{dcases}a&b\\\\c&d\\end{dcases}");
-    let exported = editor.source();
+    let source = "\\begin{dcases}a&b\\\\c&d\\end{dcases}";
+    let document = parse(source);
+    let exported = to_latex(&document.model, document.root());
+    let mut editor = editor(source);
     assert!(editor.select_all());
     let copied = editor.cut_selection(&FakeFont).expect("a selection");
     assert_eq!(copied, exported);
     assert!(editor.insert_latex(&copied, &FakeFont));
-    assert_eq!(editor.source(), exported);
+    assert_eq!(
+        editor.source(),
+        source,
+        "the environment survives the round trip"
+    );
 }
 
 #[test]
@@ -912,10 +926,8 @@ fn an_empty_pmod_puts_the_caret_in_its_argument() {
 }
 
 #[test]
-fn spans_describe_the_export_from_construction() {
-    let editor = editor("\\frac{1}{2}");
-    let export = editor.source();
-    assert_eq!(export, "\\frac {1}{2}");
+fn offsets_name_the_text_the_host_holds() {
+    let mut editor = editor("\\frac{1}{2}");
     let denominator = editor
         .geometry()
         .carets()
@@ -927,40 +939,79 @@ fn spans_describe_the_export_from_construction() {
         .map(|(path, _)| path.clone())
         .expect("a stop in the denominator");
     assert_eq!(
+        editor.source(),
+        "\\frac{1}{2}",
+        "an untouched model keeps the spelling the host gave it"
+    );
+    assert_eq!(
+        editor.offset_of(&denominator),
+        Some(9),
+        "the denominator starts where the host's own bytes put it"
+    );
+
+    // An edit hands the host the export, which it splices into its buffer; the offsets
+    // move with that text, so both still name the same bytes.
+    press(&mut editor, Key::Character('x'));
+    assert_eq!(editor.source(), "\\frac {1}{2}x");
+    assert_eq!(
         editor.offset_of(&denominator),
         Some(10),
-        "the denominator starts where the export puts it"
+        "the same stop now names the export's byte"
     );
 }
 
 #[test]
-fn offsets_follow_the_export_and_accept_a_host_selection() {
+fn the_hosts_last_byte_reaches_the_formulas_last_characters() {
+    // The export of this formula is four bytes longer than it was written — a space after
+    // `\\int`, braces around the scripts, no space before `dx`. A host whose payload ends
+    // at the source's last byte must still land on the formula's end, or its last two
+    // characters can never be selected.
+    let source = "\\int_0^1 x^2 \\, dx";
+    let mut editor = editor(source);
+    assert_eq!(editor.source(), source);
+    let last = editor
+        .geometry()
+        .carets()
+        .last()
+        .map(|(path, _)| path.clone())
+        .expect("the formula has stops");
+    assert!(editor.set_selection_offsets(0, source.len()));
+    assert_eq!(
+        editor.caret(),
+        &last,
+        "the host's last byte is the formula's last stop, not a byte inside it"
+    );
+}
+
+#[test]
+fn offsets_follow_the_hosts_bytes_and_accept_a_host_selection() {
     let source = "a+\\frac{b}{c}";
     let mut editor = editor(source);
-    // Offsets name the export the editor holds, not the source it was built from.
-    let export = editor.source();
-    assert_eq!(export, "a+\\frac {b}{c}");
+    // Offsets name the bytes the host holds: the source, until an edit exports the model.
+    let text = editor.source();
+    assert_eq!(text, source);
     let mut previous = 0;
     for (path, _) in editor.geometry().carets() {
         let offset = editor.offset_of(path).expect("a stop maps into the source");
         assert!(offset >= previous, "{offset} after {previous}");
-        assert!(offset <= export.len(), "{offset} past the source");
+        assert!(offset <= text.len(), "{offset} past the source");
         previous = offset;
     }
 
     // A host drags from its own buffer into the numerator and back out.
-    assert!(editor.set_selection_offsets(0, 9));
+    let numerator = source.find('b').expect("the numerator's byte");
+    assert!(editor.set_selection_offsets(0, numerator));
     assert_eq!(editor.anchor_offset(), Some(0));
-    assert_eq!(editor.caret_offset(), Some(9));
-    assert_eq!(editor.selection_offsets(), Some((0, 9)));
+    assert_eq!(editor.caret_offset(), Some(numerator));
+    assert_eq!(editor.selection_offsets(), Some((0, numerator)));
     assert!(!editor.selection().is_empty());
 
     let (anchor, caret) = editor.selection_offsets().expect("still selected");
     assert!(!editor.set_selection_offsets(anchor, caret));
-    assert!(editor.set_selection_offsets(9, 9));
+    assert!(editor.set_selection_offsets(numerator, numerator));
     assert_eq!(
         editor.selection_offsets(),
-        Some((9, 9)),
+        Some((numerator, numerator)),
         "a collapsed selection names the caret twice"
     );
     assert!(editor.selection().is_empty());

@@ -78,6 +78,14 @@ pub struct Editor {
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
     shaper: Option<Arc<dyn TextShaper>>,
+    /// The text the host handed us and each node's span in it. The export differs —
+    /// the writer terminates commands and braces scripts — so the seam names whichever
+    /// text the host holds: this one until an edit changes the model, the export after
+    /// that, because the host splices the export into its buffer then.
+    input: String,
+    input_spans: std::collections::HashMap<NodeId, Span>,
+    /// The export of the model as parsed; while it still matches, the model is untouched.
+    pristine: String,
     preedit: Option<Preedit>,
     text_preedit: Option<TextPreedit>,
     command: Option<String>,
@@ -105,6 +113,7 @@ impl Editor {
     /// Parses `source`, lays it out and puts the caret at the end.
     pub fn new(source: &str, font: &dyn MathFont, size: f32, style: Style) -> Self {
         let document = parse(source);
+        let spans = input_spans(source, &document.model);
         let (layout, geometry, layout_diagnostics) =
             layout_with_geometry(font, &document.model, document.root(), size, style);
         let mut diagnostics = document.diagnostics.clone();
@@ -128,6 +137,9 @@ impl Editor {
             undo: Vec::new(),
             redo: Vec::new(),
             shaper: None,
+            input: source.to_owned(),
+            input_spans: spans,
+            pristine: String::new(),
             preedit: None,
             text_preedit: None,
             command: None,
@@ -139,9 +151,10 @@ impl Editor {
             command_ime_start: None,
             message: None,
         };
-        // The parser's spans name the source the formula was read from; the export
-        // normalizes it. Offsets into the export must hold from the first frame.
+        // The model's spans describe the export; the host's bytes are the input until an
+        // edit replaces them, and `input_spans` names those.
         editor.normalize_spans();
+        editor.pristine = editor.export();
         editor
     }
 
@@ -161,8 +174,43 @@ impl Editor {
         &self.diagnostics
     }
 
+    /// The formula as text: the host's own bytes while the model still matches what was
+    /// parsed, the writer's export once an edit changed it.
     pub fn source(&self) -> String {
+        self.seam().0
+    }
+
+    /// The writer's spelling of the model, whatever the host's buffer holds.
+    fn export(&self) -> String {
         to_latex_with_spellings(&self.model, self.model.root(), &self.spellings)
+    }
+
+    /// The text the host holds and whether that text is the input (its own spans) or the
+    /// export (the model's spans).
+    ///
+    /// An edit replaces the host's payload with the export, so offsets must name the
+    /// export from the moment the model changes — but not before: the export adds spaces
+    /// after commands and braces around scripts, and offsets into it would then point at
+    /// bytes of a text the host does not hold.
+    fn seam(&self) -> (String, bool) {
+        let export = self.export();
+        if export == self.pristine {
+            (self.input.clone(), true)
+        } else {
+            (export, false)
+        }
+    }
+
+    /// The span of `node` in the text the seam names: the input's own, or the export's.
+    fn span_of(&self, node: NodeId, input: bool) -> Span {
+        match input {
+            true => self
+                .input_spans
+                .get(&node)
+                .copied()
+                .unwrap_or_else(|| self.model.span(node)),
+            false => self.model.span(node),
+        }
     }
 
     /// Byte range of `node` in `source()`, or `None` if it is no longer alive.
@@ -219,17 +267,18 @@ impl Editor {
     /// Every other stop maps to the start of the child after it, or past the last child, which
     /// makes the offsets monotonic in reading order. `None` when the path names a freed node.
     pub fn offset_of(&self, path: &CaretPath) -> Option<usize> {
-        self.offset_in(path, &self.source())
+        let (source, input) = self.seam();
+        self.offset_in(path, &source, input)
     }
 
-    fn offset_in(&self, path: &CaretPath, source: &str) -> Option<usize> {
+    fn offset_in(&self, path: &CaretPath, source: &str, input: bool) -> Option<usize> {
         let Some(last) = path.steps.last() else {
             return Some(0);
         };
         if !self.model.is_alive(last.node) {
             return None;
         }
-        let span = self.model.span(last.node);
+        let span = self.span_of(last.node, input);
         let kind = self.model.kind(last.node);
         let NodeKind::Text(text) = kind else {
             let children: Vec<NodeId> = kind
@@ -239,10 +288,10 @@ impl Editor {
                 .map(|child| child.id)
                 .collect();
             return match children.get(last.index) {
-                Some(child) => Some(self.model.span(*child).start),
+                Some(child) => Some(self.span_of(*child, input).start),
                 None => children
                     .last()
-                    .map(|child| self.model.span(*child).end)
+                    .map(|child| self.span_of(*child, input).end)
                     .or(Some(span.start)),
             };
         };
@@ -275,10 +324,10 @@ impl Editor {
     /// to that token's boundary. Preferring the deepest stop lets a host caret inside a
     /// fraction enter the fraction instead of stopping beside it.
     pub fn caret_at_offset(&self, offset: usize) -> Option<CaretPath> {
-        let source = self.source();
+        let (source, input) = self.seam();
         let mut best: Option<(usize, usize, CaretPath)> = None;
         for (path, _) in self.geometry.carets() {
-            let Some(stop) = self.offset_in(path, &source) else {
+            let Some(stop) = self.offset_in(path, &source, input) else {
                 continue;
             };
             let distance = stop.abs_diff(offset);
@@ -371,6 +420,8 @@ impl Editor {
         }
         let ordinal = self.caret_index().unwrap_or(usize::MAX);
         let document = parse(source);
+        self.input = source.to_owned();
+        self.input_spans = input_spans(source, &document.model);
         self.model = document.model;
         self.spellings = document.spellings;
         self.parse_diagnostics = document.diagnostics;
@@ -388,6 +439,7 @@ impl Editor {
         self.anchor = None;
         self.message = None;
         self.relayout(font);
+        self.pristine = self.export();
         let count = self.geometry.carets().count();
         let target = ordinal.min(count.saturating_sub(1));
         self.caret = self.stop_path(target).unwrap_or_default();
@@ -2827,6 +2879,34 @@ fn first_empty_slot(model: &Model, id: NodeId) -> Option<(NodeId, Slot, usize)> 
 /// A text node is written either as `\text{…}` or as the spelling its document used, and both
 /// put the body between the first `{` and the last `}`. A node exported without braces (a
 /// `\pmod` piece, say) has no body to map into.
+/// Each node's span in the text the editor was built from.
+///
+/// The parser spans a braced argument as `{1}`, brace included, and a caret's byte is the
+/// argument's first character; trimming one surrounding pair makes the span name the
+/// content.
+fn input_spans(source: &str, model: &Model) -> std::collections::HashMap<NodeId, Span> {
+    let mut spans = std::collections::HashMap::new();
+    let mut stack = vec![model.root()];
+    while let Some(id) = stack.pop() {
+        let span = model.span(id);
+        let text = source.get(span.start..span.end).unwrap_or("");
+        let braced = text.len() >= 2 && text.starts_with('{') && text.ends_with('}');
+        spans.insert(
+            id,
+            if braced {
+                Span {
+                    start: span.start + 1,
+                    end: span.end - 1,
+                }
+            } else {
+                span
+            },
+        );
+        stack.extend(model.kind(id).children().iter().map(|child| child.id));
+    }
+    spans
+}
+
 fn text_body(source: &str, span: Span) -> Option<(usize, &str)> {
     let token = source.get(span.start..span.end)?;
     let open = token.find('{')?;
