@@ -6,7 +6,8 @@
 use math_core::Color;
 
 /// The names `\color` accepts, with the first one winning when writing back.
-const NAMED: [(&str, Color); 23] = [
+/// Matching is case-insensitive; aliases follow their canonical spelling.
+const NAMED: [(&str, Color); 27] = [
     ("black", Color::rgb(0, 0, 0)),
     ("white", Color::rgb(255, 255, 255)),
     ("gray", Color::rgb(128, 128, 128)),
@@ -30,18 +31,27 @@ const NAMED: [(&str, Color); 23] = [
     ("darkgray", Color::rgb(169, 169, 169)),
     ("lightgray", Color::rgb(211, 211, 211)),
     ("grey", Color::rgb(128, 128, 128)),
+    ("aqua", Color::rgb(0, 255, 255)),
+    ("fuchsia", Color::rgb(255, 0, 255)),
+    ("darkgrey", Color::rgb(169, 169, 169)),
+    ("lightgrey", Color::rgb(211, 211, 211)),
 ];
 
-/// Parses a color argument: a table name or CSS hex (`#RGB`, `#RGBA`,
-/// `#RRGGBB`, `#RRGGBBAA`).
+/// Parses a color argument: a case-insensitive table name, a bare six-digit
+/// hex (`xcolor`'s HTML model, as KaTeX accepts), or `#`-prefixed hex
+/// (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`; the alpha forms extend KaTeX).
 pub(crate) fn parse(spec: &str) -> Result<Color, String> {
     let spec = spec.trim();
     if let Some(hex) = spec.strip_prefix('#') {
         return parse_hex(hex).ok_or_else(|| format!("invalid color `#{hex}`"));
     }
+    if spec.len() == 6 && spec.chars().all(|symbol| symbol.is_ascii_hexdigit()) {
+        return parse_hex(spec).ok_or_else(|| format!("invalid color `{spec}`"));
+    }
+    let name = spec.to_ascii_lowercase();
     NAMED
         .iter()
-        .find(|(name, _)| *name == spec)
+        .find(|(candidate, _)| *candidate == name)
         .map(|(_, color)| *color)
         .ok_or_else(|| format!("unknown color `{spec}`"))
 }

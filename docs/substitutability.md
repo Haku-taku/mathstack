@@ -138,7 +138,7 @@ in place of the following. Within that boundary:
   font choice. Not replaceable for complete KaTeX parity: 336/987 probe
   entries, and probe coverage is not semantics. Deliberate divergences are
   documented: top-level line breaks are deferred, CSS colour keywords outside
-  the 23-name table are diagnosed, and there is no KaTeX `strict` policy.
+  the 27-name table are diagnosed, and there is no KaTeX `strict` policy.
 - **Typst:** not a replacement target in either direction.
 
 Since 5.1 the supported set gained environments (28/33 probe names, including

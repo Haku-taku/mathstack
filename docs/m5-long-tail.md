@@ -162,10 +162,14 @@ outer one. The preceding version closed a style switch before starting the next
 (they were siblings); that cannot represent a color that spans the boundary, so
 the switch now nests and the scope test pins that shape.
 
-`Color` is straight sRGB with an alpha byte. The parser accepts the 23 common
-CSS/dvips names and `#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`. An unknown name or
-a malformed hex value is a diagnostic and the wrapper keeps black, so the tree
-stays editable; the diagnostic is what surfaces the error. Canonical output
+`Color` is straight sRGB with an alpha byte. The parser accepts 27 common
+CSS/dvips names (case-insensitively, including the `aqua`/`fuchsia` and grey
+aliases), bare six-digit hex as xcolor's HTML model, and `#RGB`, `#RGBA`,
+`#RRGGBB`, `#RRGGBBAA`; the alpha forms extend KaTeX, which accepts only
+three- and six-digit hex, while bare hex and case-insensitive names match it.
+An unknown name or a malformed hex value is a diagnostic and the wrapper keeps
+black, so the tree stays editable; the diagnostic is what surfaces the error.
+Canonical output
 writes a table name when one matches the value, else lowercase hex, with alpha
 only when it is not opaque. KaTeX passes any alphabetic CSS keyword through to
 the renderer, so names outside this table (for example `rebeccapurple`) are a
@@ -417,7 +421,8 @@ or brace glyph.
 - `color_and_style_switches_keep_their_source_order` pins both orderings of
   `\color` and `\displaystyle`; closing declarations oldest-first fails it.
 - `textcolor_and_color_write_back_their_own_forms` pins the two written forms,
-  the canonical re-parse, hex output and the unknown-name diagnostic.
+  the canonical re-parse, hex output, case-insensitive names, bare six-digit
+  hex, an alias, and the unknown-name diagnostic.
 - The `math-svg` `constructs` example rendered a red/blue/green formula whose
   SVG parses as XML; glyphs carry the expected `fill` and both rules inside the
   blue scope carry it too.

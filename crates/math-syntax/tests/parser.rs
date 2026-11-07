@@ -751,6 +751,17 @@ fn textcolor_and_color_write_back_their_own_forms() {
     assert!(!hex.has_errors(), "{:?}", hex.diagnostics);
     assert_eq!(hex.to_latex(), "\\textcolor {#1a2b3c}{x}");
 
+    // CSS names are case-insensitive, and xcolor accepts bare six-digit hex.
+    let upper = parse("\\textcolor{Red}{x}");
+    assert!(!upper.has_errors(), "{:?}", upper.diagnostics);
+    assert_eq!(upper.to_latex(), "\\textcolor {red}{x}");
+    let bare = parse("\\textcolor{ff0000}{x}");
+    assert!(!bare.has_errors(), "{:?}", bare.diagnostics);
+    assert_eq!(bare.to_latex(), "\\textcolor {red}{x}");
+    let alias = parse("\\colorbox{aqua}{x}");
+    assert!(!alias.has_errors(), "{:?}", alias.diagnostics);
+    assert_eq!(alias.to_latex(), "\\colorbox {cyan}{x}");
+
     let unknown = parse("\\textcolor{bogus}{x}");
     assert_eq!(unknown.diagnostics.len(), 1, "an unknown name is reported");
 }
