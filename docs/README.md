@@ -11,6 +11,7 @@ the repository builds against it.
 | `survey.md` | Synthesis across ten stacks: pipeline shapes, where spans die, editing architectures, font strategies, lessons |
 | `substitutability.md` | Which Rust reference framework this stack can replace, per use case, with the blocking gap named |
 | `ui-integration.md` | Where the UI's LaTeX→MathML→formulary pipeline sits, the seam a replacement can use, and the gaps still open |
+| `review.md` | The model-to-LaTeX boundary audit: fixed findings with their tests, and the known gaps that remain |
 | `architecture.md` | Target design: crates, model, layout, geometry, host contract, milestones, rejected alternatives |
 | `raw/js.md` | KaTeX, MathJax, Temml, MathLive, MathQuill — source-cited notes |
 | `raw/rust.md` | formulary, pulldown-latex, mathtex, ratex, Typst — source-cited notes |
