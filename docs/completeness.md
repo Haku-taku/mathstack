@@ -28,7 +28,7 @@ correctly, and a command with unusual arity can be a false negative.
 | --- | --- | --- |
 | L1 parse | Partial | 77/77 curated constructs parse (`conformance.rs`); KaTeX list 336/987 through the probe set; `katex_supported_list_does_not_regress` fails if a baselined entry stops parsing; arbitrary text never panics |
 | L2 structure | Partial | Every non-whitespace byte of the curated corpus is inside a node span or a diagnostic (`every_corpus_byte_is_covered_by_a_span_or_diagnostic`); the writer round-trips the supported subset structurally |
-| L3 geometry | Partial | `math-diff --gate` checks the 16-formula differential against per-case documented allowances (±0.01 elsewhere) and fails on any parse or layout diagnostic; the rule-choice cases exceed the note's blanket 1% width threshold |
+| L3 geometry | Partial | `math-diff --gate` checks the 19-formula differential against per-case documented allowances (±0.01 elsewhere) and fails on any parse or layout diagnostic; the rule-choice cases exceed the note's blanket 1% width threshold |
 | L4 visual | Partial | The native host in `math-editor-demo` paints the display list through `resvg` and draws caret and selection; there is no golden-image or automated screenshot gate |
 | L5 robustness | Present | `arbitrary_text_never_panics` (3 000 generated sources) and `every_prefix_of_the_corpus_parses`; macro, depth and node budgets have their own tests |
 

@@ -29,10 +29,10 @@ list of KaTeX commands.
 | LaTeX input | recursive-descent parser, spans on every node | `math-syntax`; `every_corpus_byte_is_covered_by_a_span_or_diagnostic` |
 | Syntax breadth | 336/987 KaTeX probe entries; 77/77 curated constructs | `docs/completeness.md`; `conformance.rs` |
 | Semantic tree | stable `NodeId` arena, `Origin`, `Span` | `math-core::Model`; M4 tests |
-| Layout | TeX Appendix G rules driven by MATH constants | `math-diff --gate`, 16-formula differential |
+| Layout | TeX Appendix G rules driven by MATH constants | `math-diff --gate`, 19-formula differential |
 | Fonts | any OpenType MATH face, caller-supplied bytes; `ssty` variants | `math-font`; `script_levels_take_the_fonts_alternates` |
 | Output | `Layout`/`MathBox` display list; `math-svg` painter | `math-svg`; `math-editor-demo` |
-| Editing | model edits, caret paths, selection, empty-slot rects, IME, undo, spellings | `math-editor`; 29 editor tests |
+| Editing | model edits, caret paths, selection, empty-slot rects, IME, undo, spellings | `math-editor`; 30 editor tests |
 | Macros | token-list `\def`/`\newcommand` with `Origin::Macro`, budgets | `m3-macros-text.md` |
 | Error recovery | diagnostic nodes keep the surrounding structure | `errors_recover_in_place`; `robustness.rs` |
 | License | MIT OR Apache-2.0 | `Cargo.toml` |
@@ -52,7 +52,7 @@ flat `Layout` with no node identity (`raw/rust.md`, formulary section). It does
 not parse LaTeX.
 
 - **Render LaTeX with formulary:** replaceable. This stack owns the whole
-  LaTeX path and needs no MathML intermediate. The 16-formula differential is
+  LaTeX path and needs no MathML intermediate. The 19-formula differential is
   the current geometry check.
 - **Layout MathML with formulary:** **not replaceable**. There is no MathML
   reader or MathML output here. A host that receives MathML must keep formulary
@@ -84,7 +84,7 @@ headless editor (`raw/rust.md`, mathtex section).
   grammar, with a much smaller artifact (no 3.1 MB format or 58k generated LOC).
   Editing geometry here is a direct id→box map, not mathtex's
   export-with-span-map round trip.
-- **Exact TeX layout parity:** `[unverified]`; the differential covers 16
+- **Exact TeX layout parity:** `[unverified]`; the differential covers 19
   formulas against formulary, not the full TeX rule set.
 
 ### ratex 0.1.15
@@ -123,20 +123,40 @@ stretch and spacing, not a replacement target.
 
 ## Conclusion
 
-For **embedded LaTeX math rendering and editing with a caller-supplied OpenType
-MATH font**, this stack can replace formulary's layout half, pulldown-latex's
-render path, ratex for the supported command subset, and mathtex for ordinary
-formulas without a TeX installation. It cannot yet replace:
+"Replaceable" here means capability, not API: a host that owns the LaTeX text,
+supplies an OpenType MATH face, and consumes a display list can use this stack
+in place of the following. Within that boundary:
 
-- formulary for MathML input;
-- pulldown-latex for an `Event` API or MathML output;
-- mathtex for full TeX semantics;
-- ratex for complete KaTeX parity.
+- **formulary:** replaceable for the LaTeX → layout half. Not replaceable for
+  MathML input, which has no reader here.
+- **pulldown-latex:** replaceable on the render path, which pulldown-latex
+  leaves to its caller. Not replaceable for its `Event` API or MathML writer.
+- **mathtex:** replaceable for ordinary formulas and the editing surface,
+  without a TeX installation or baked format. Not replaceable for full TeX
+  semantics.
+- **ratex:** replaceable for the supported command subset, and stronger on
+  font choice. Not replaceable for complete KaTeX parity: 336/987 probe
+  entries, and probe coverage is not semantics. Deliberate divergences are
+  documented: top-level line breaks are deferred, CSS colour keywords outside
+  the 23-name table are diagnosed, and there is no KaTeX `strict` policy.
+- **Typst:** not a replacement target in either direction.
 
-Those four exclusions are capability boundaries, not missing polish; closing
-them would require a MathML front end, an event API, a TeX engine, or the full
-KaTeX command set respectively.
+Since 5.1 the supported set gained environments (28/33 probe names, including
+`array` and `smallmatrix`; `alignat` is implemented but its required `{n}`
+argument is outside the generic probe), colours and colour boxes, style/class
+wrappers, `\mathchoice`/`\mathstrut` and decorated limit operators; the
+geometry differential grew from 16 to 19 formulas. The remaining capability
+gaps are the table above: `\multicolumn`, `CD`, top-level line breaks,
+long-tail symbols, and the MathML/event/full-TeX surfaces.
 
+**Capability is not integration.** The crabsnap-ng UI still runs `ui-math`'s
+pulldown-latex → MathML → formulary path. `ui-integration.md` records the seam
+and the prerequisites: structured diagnostics, a stroked line primitive for
+`\cancel`, and a decision on structural editing. The swap (7.2/7.3) crosses
+repositories and waits for the user's decision. Until then this page answers
+what the stack *can* do, not what the application already uses.
+
+The exclusions are boundaries, not missing polish: a MathML front end, an
+event API, a TeX engine and the complete KaTeX surface are different products.
 The decisions above order the remaining work by whether it blocks the LaTeX
-rendering path: environments, colours and style wrappers do, so they come
-first; MathML, an event API and TeX macros are separate surfaces and stay out.
+rendering path.
