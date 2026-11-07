@@ -807,6 +807,18 @@ fn colorbox_arguments_are_text_and_write_back_their_commands() {
 }
 
 #[test]
+fn a_colorbox_without_a_body_writes_an_error_back() {
+    let document = parse("\\colorbox{red}");
+    assert!(document.has_errors());
+    let written = document.to_latex();
+    assert_eq!(written, "\\colorbox {red}");
+    assert!(
+        parse(&written).has_errors(),
+        "the missing body must stay an error, not become literal text"
+    );
+}
+
+#[test]
 fn operator_suffixes_select_the_limits_placement() {
     let document = parse("\\int\\limits_0^1");
     let NodeKind::Scripts { base, .. } = document

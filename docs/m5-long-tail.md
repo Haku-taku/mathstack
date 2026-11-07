@@ -201,8 +201,11 @@ like `\text`, not a math list. `\colorbox` pads by `\fboxsep` (0.3 em) and
 draws no frame; `\fcolorbox` adds the `\fboxrule` (0.04 em) frame on top of
 that padding, fills with the background color and draws the frame in the border
 color. The writer derives the command from the border and prints the two color
-arguments in order, so both forms round-trip. An unknown color is the same
-diagnostic and black fallback as `\textcolor`. This follows TeX's `\fbox`
+arguments in order, so both forms round-trip. Only a `Text` body is written: an
+`Error` from a missing argument is omitted, so re-export keeps the error, and a
+math body built through the public API is refused rather than flattened into
+literal text. An unknown color is the same diagnostic and black fallback as
+`\textcolor`. This follows TeX's `\fbox`
 model, which puts the rule outside the separation on every side. KaTeX's
 border-box frame spans the padding horizontally instead, so its `\fcolorbox`
 is 0.08 em narrower than this stack; the vertical extent agrees. KaTeX also
@@ -427,6 +430,9 @@ or brace glyph.
   text-mode body, both written forms, the canonical re-parse and the
   unknown-color diagnostic; parsing the body as math or swapping the frame and
   background arguments fails it.
+- `a_colorbox_without_a_body_writes_an_error_back` pins that a missing body is
+  omitted from the output and re-parses as the same error; writing the Error
+  node as text heals the diagnostic and fails it.
 - A manual `math-svg` render of `\colorbox{yellow}{Hi}+\fcolorbox{blue}{red}{X}`
   parses as XML with the yellow and red fills before the text paths and four
   blue frame rules after them.
@@ -494,6 +500,11 @@ edits, `Origin::Macro` and the `Composition` node are in
   whenever a sibling follows, and writes a script base as if one did; the style
   switch uses the same rule. `a_declaration_inserted_mid_row_keeps_its_scope`
   fails without the braces (previously it exported `a\color{red}yb`).
+- **A missing colorbox body was written as the command's own name.** The
+  writer's text-argument fallback serialized the `Error` node inside the text
+  argument, so `\colorbox{red}` exported as `\colorbox {red}{\colorbox }` and
+  re-parsed cleanly as literal text. Only a `Text` body is written now;
+  `a_colorbox_without_a_body_writes_an_error_back` fails if the error heals.
 - **A style switch could not stay a sibling of the next one.** Colors exposed
   the old rule: closing the previous switch when a new one starts loses scope
   for a `\color` that spans the boundary. Declarations are now a stack closed

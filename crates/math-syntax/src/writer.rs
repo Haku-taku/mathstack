@@ -386,15 +386,13 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             out.push('{');
             out.push_str(&colors::write(*background));
             out.push('}');
-            // The body is a text argument, so `\text{…}` would be read back
-            // as literal text; write the characters themselves.
-            match model.kind(*body) {
-                NodeKind::Text(text) => {
-                    out.push('{');
-                    write_text(text, out);
-                    out.push('}');
-                }
-                _ => write_argument(model, *body, out),
+            // The body is a text argument: only Text has a spelling here.
+            // Omitting anything else keeps a missing argument an error and
+            // refuses a math body rather than turning it into literal text.
+            if let NodeKind::Text(text) = model.kind(*body) {
+                out.push('{');
+                write_text(text, out);
+                out.push('}');
             }
         }
         NodeKind::Color { color, body } => match out.spelling(model, id) {
