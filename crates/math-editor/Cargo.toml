@@ -9,3 +9,4 @@ rust-version.workspace = true
 [dependencies]
 math-core.workspace = true
 math-syntax.workspace = true
+unicode-segmentation.workspace = true

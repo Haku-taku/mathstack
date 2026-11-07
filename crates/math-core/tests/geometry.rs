@@ -1,6 +1,7 @@
 use math_core::{
-    CaretPath, Constants, GlyphId, InkBounds, MathFont, Model, NodeId, Point, Slot, Step, Style,
-    layout_with_geometry,
+    CaretPath, Constants, GlyphId, InkBounds, MathFont, Model, NodeId, Point, ShapedGlyph,
+    ShapedRun, Slot, Step, Style, TextShaper, TextStyle, layout_with_geometry,
+    layout_with_shaper_and_geometry,
 };
 
 struct TestFont;
@@ -313,4 +314,74 @@ fn hit_test_descends_a_table_row_then_its_cell() {
             .any(|step| step.node == cell && step.slot == Slot::Body),
         "the path ends inside the chosen cell: {path:?}"
     );
+}
+
+#[test]
+fn a_text_leaf_offers_a_caret_between_every_cluster() {
+    let (model, root) = Model::build(|m| m.text("ab"));
+    let (_, geometry, _) = layout_with_geometry(&TestFont, &model, root, 10.0, Style::TEXT);
+
+    let paths: Vec<&CaretPath> = geometry
+        .carets()
+        .filter(|(path, _)| {
+            path.steps
+                .first()
+                .is_some_and(|step| step.node == root && step.slot == Slot::Body)
+        })
+        .map(|(path, _)| path)
+        .collect();
+    let offsets: Vec<usize> = paths
+        .iter()
+        .filter_map(|path| path.steps.last().map(|step| step.index))
+        .collect();
+    assert_eq!(offsets, vec![0, 1, 2], "one caret per byte boundary");
+
+    let middle = geometry.caret(paths[1]).expect("the caret resolves");
+    assert!((middle.x - 5.0).abs() < 0.01);
+    let hit = geometry
+        .hit_test(Point { x: 6.0, y: 5.0 })
+        .expect("a caret inside the text");
+    assert_eq!(hit.steps.last().map(|step| step.index), Some(1));
+
+    let selected = geometry.selection(paths[0], paths[2]);
+    let width: f32 = selected.iter().map(|rect| rect.width).sum();
+    assert!((width - 10.0).abs() < 0.01);
+}
+
+struct LigatureShaper;
+
+impl TextShaper for LigatureShaper {
+    fn shape(&self, _text: &str, _style: TextStyle) -> ShapedRun {
+        ShapedRun {
+            glyphs: vec![ShapedGlyph {
+                glyph: GlyphId(1),
+                x: 0.0,
+                y: 0.0,
+                size: 1.0,
+                cluster: 0,
+            }],
+            width: 3.0,
+            ascent: 0.6,
+            descent: 0.2,
+            missing: Vec::new(),
+        }
+    }
+}
+
+#[test]
+fn a_ligature_cannot_be_split_by_a_caret() {
+    let (model, root) = Model::build(|m| m.text("ffi"));
+    let (_, geometry, _) = layout_with_shaper_and_geometry(
+        &TestFont,
+        &LigatureShaper,
+        &model,
+        root,
+        10.0,
+        Style::TEXT,
+    );
+    let offsets: Vec<usize> = geometry
+        .carets()
+        .filter_map(|(path, _)| path.steps.last().map(|step| step.index))
+        .collect();
+    assert_eq!(offsets, vec![0, 3], "the ligature is one cluster");
 }

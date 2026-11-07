@@ -290,7 +290,9 @@ not merely a UX choice but often physically unwritable.
   the font's `ssty` alternates at depth 1 and 2.
 - `\text` and `\operatorname` go through a host-provided `TextShaper`. The core
   defines the trait and a trivial fallback that treats the string as a run of
-  glyphs from the same face.
+  glyphs from the same face. Every shaped glyph names the byte offset of its
+  source cluster; an editable `\text` uses those offsets for caret positions,
+  so a ligature stays one caret unit.
 - Font absence or a missing MATH table is a typed error at engine construction,
   not per formula. A missing glyph is a diagnostic with the span that asked for
   it.

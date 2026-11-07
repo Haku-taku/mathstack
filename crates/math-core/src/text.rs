@@ -22,6 +22,11 @@ pub struct ShapedGlyph {
     pub x: f32,
     pub y: f32,
     pub size: f32,
+    /// The byte offset in the shaped text where this glyph's cluster starts.
+    /// A ligature maps several characters to one glyph; all its glyphs share
+    /// the offset of the first character, and the next cluster starts after
+    /// the ligature.
+    pub cluster: usize,
 }
 
 /// A host-measured text run, in em units.
@@ -56,7 +61,7 @@ impl<'a> FontShaper<'a> {
 impl TextShaper for FontShaper<'_> {
     fn shape(&self, text: &str, _style: TextStyle) -> ShapedRun {
         let mut run = ShapedRun::default();
-        for symbol in text.chars() {
+        for (offset, symbol) in text.char_indices() {
             let Some(glyph) = self.font.glyph(symbol) else {
                 run.missing.push(symbol);
                 continue;
@@ -70,6 +75,7 @@ impl TextShaper for FontShaper<'_> {
                 x: run.width,
                 y: 0.0,
                 size: 1.0,
+                cluster: offset,
             });
             run.width += self.font.advance(glyph);
         }

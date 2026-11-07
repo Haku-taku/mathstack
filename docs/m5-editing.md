@@ -58,6 +58,19 @@ parses the text as math and replaces the node with the result in one edit, so
 undo sees one step and the preedit itself is never undoable. A composition does
 not need a span; the synthetic origin is the marker.
 
+## Text leaves
+
+A `Text(String)` stays one model leaf; the editor edits inside it by byte
+offset instead of splitting it into character nodes. Layout records the
+cluster boundaries the shaper returns, so the geometry index offers carets at
+`Text` offsets and the selection highlights the substring between them. A
+ligature is one cluster and cannot be split; a combining mark shares its
+base's cluster. Editing a range replaces the string and relayouts; if the new
+string forms a different cluster, the caret snaps to the nearest boundary the
+new shape offers. Backspace, Delete and IME commits move by grapheme, so a
+combining sequence or emoji ZWJ stays one editing unit even when the geometry
+has a stop inside it.
+
 ## Verification
 
 - `inserting_and_removing_a_node_reuses_the_slot` — insertion splices at the
@@ -74,6 +87,19 @@ not need a span; the synthetic origin is the marker.
   `substitute` makes it fail.
 - `a_composition_lays_out_like_text` and `a_live_composition_is_not_written` —
   the preedit measures like the same text and produces no LaTeX.
+- `a_text_leaf_offers_a_caret_between_every_cluster` — a text leaf exposes one
+  caret per cluster boundary, hit-testing selects the nearest, and the
+  selection covers the substring.
+- `a_ligature_cannot_be_split_by_a_caret` — a shaper that returns one glyph for
+  `ffi` yields only the two ends; replacing cluster data with per-character
+  boundaries makes it fail.
+- `typing_inside_a_text_leaf_edits_its_string` and
+  `an_ime_composition_edits_a_text_leaf_and_commits_in_one_undo` — typing and
+  IME replace the string in place; undo restores the pre-composition text.
+- `one_backspace_removes_a_combined_grapheme` — a combining sequence is one
+  grapheme for deletion even when geometry has two cluster stops.
+- `shift_arrows_select_and_replace_inside_text` — a text-internal selection
+  returns its substring and typing replaces exactly that range.
 
 ## Remaining after M5
 

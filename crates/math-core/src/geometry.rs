@@ -93,12 +93,21 @@ impl CaretPath {
     }
 }
 
+/// Caret boundaries inside a text leaf: a byte offset and its x position in
+/// the leaf's own coordinates. A ligature contributes only its two ends, so a
+/// caret never falls inside one glyph.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct TextBox {
+    pub(crate) boundaries: Vec<(usize, f32)>,
+}
+
 #[derive(Clone)]
 struct GNode {
     id: Option<NodeId>,
     rect: Rect,
     baseline: f32,
     slots: Vec<GSlot>,
+    text: Option<TextBox>,
 }
 
 #[derive(Clone)]
@@ -189,6 +198,21 @@ impl Geometry {
             if Some(step.node) != node.id {
                 return None;
             }
+            if let Some(text) = &node.text {
+                if step.slot != Slot::Body {
+                    return None;
+                }
+                let x = text
+                    .boundaries
+                    .iter()
+                    .find(|(byte, _)| *byte == step.index)?
+                    .1;
+                return Some(CaretRect {
+                    x: node.rect.x + x,
+                    top: node.rect.y,
+                    bottom: node.rect.bottom(),
+                });
+            }
             let children: Vec<&GChild> = node
                 .slots
                 .iter()
@@ -264,6 +288,20 @@ impl Geometry {
         let Some(id) = node.id else {
             return false;
         };
+        if let Some(text) = &node.text {
+            let x = point.x - node.rect.x;
+            let index = text
+                .boundaries
+                .iter()
+                .min_by(|(_, left), (_, right)| (left - x).abs().total_cmp(&(right - x).abs()))
+                .map_or(0, |(byte, _)| *byte);
+            steps.push(Step {
+                node: id,
+                slot: Slot::Body,
+                index,
+            });
+            return true;
+        }
         let Some(slot) = choose_slot(node, point) else {
             return false;
         };
@@ -316,7 +354,7 @@ impl Geometry {
             });
         if let Some((position, child)) = inside
             && let Some(child_node) = &child.node
-            && !child_node.slots.is_empty()
+            && (!child_node.slots.is_empty() || child_node.text.is_some())
         {
             if let Some(last) = steps.last_mut() {
                 last.index = position;
@@ -392,6 +430,10 @@ impl Collector {
         } else {
             bounds
         };
+        if let Some(text) = &node.text {
+            self.text_stops(id, node, text, prefix);
+            return;
+        }
         for slot in &node.slots {
             let ids: Vec<&GChild> = slot
                 .children
@@ -404,7 +446,7 @@ impl Collector {
             self.stop(id, slot.slot, 0, node, prefix, bounds);
             for (index, child) in ids.iter().enumerate() {
                 if let Some(child_node) = &child.node
-                    && !child_node.slots.is_empty()
+                    && (!child_node.slots.is_empty() || child_node.text.is_some())
                 {
                     prefix.push(Step {
                         node: id,
@@ -417,6 +459,38 @@ impl Collector {
                     self.entries.push(Entry::Ink(child.rect));
                 }
                 self.stop(id, slot.slot, index + 1, node, prefix, bounds);
+            }
+        }
+    }
+
+    /// One stop per text cluster boundary, with an ink segment between each
+    /// adjacent pair so a selection can highlight a substring.
+    fn text_stops(&mut self, id: NodeId, node: &GNode, text: &TextBox, prefix: &[Step]) {
+        for (position, (byte, x)) in text.boundaries.iter().enumerate() {
+            let mut steps = prefix.to_vec();
+            steps.push(Step {
+                node: id,
+                slot: Slot::Body,
+                index: *byte,
+            });
+            let left = node.rect.x + *x;
+            self.stops.push((
+                CaretPath { steps },
+                CaretRect {
+                    x: left,
+                    top: node.rect.y,
+                    bottom: node.rect.bottom(),
+                },
+            ));
+            let stop = self.stops.len() - 1;
+            self.entries.push(Entry::Stop(stop));
+            if let Some((_, next)) = text.boundaries.get(position + 1) {
+                self.entries.push(Entry::Ink(Rect {
+                    x: left,
+                    y: node.rect.y,
+                    width: next - *x,
+                    height: node.rect.height,
+                }));
             }
         }
     }
@@ -557,6 +631,7 @@ fn convert(
         rect,
         baseline,
         slots,
+        text: box_.text.clone(),
     }
 }
 

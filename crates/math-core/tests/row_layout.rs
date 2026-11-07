@@ -1162,6 +1162,7 @@ impl TextShaper for WideShaper {
                 x: 1.0,
                 y: 0.5,
                 size: 2.0,
+                cluster: 0,
             }],
             width: 3.0,
             ascent: 1.0,

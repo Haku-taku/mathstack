@@ -635,3 +635,92 @@ fn decorated_operator_commands_enter_through_the_command_buffer() {
     press(&mut arrow, Key::Character('x'));
     assert_eq!(arrow.source(), "\\underrightarrow {x}");
 }
+
+fn find_text(model: &Model, id: NodeId) -> Option<NodeId> {
+    if matches!(model.kind(id), NodeKind::Text(_)) {
+        return Some(id);
+    }
+    model
+        .kind(id)
+        .children()
+        .into_iter()
+        .find_map(|child| find_text(model, child.id))
+}
+
+#[test]
+fn typing_inside_a_text_leaf_edits_its_string() {
+    let mut editor = editor("\\text{ab}");
+    let text = find_text(editor.model(), editor.model().root()).expect("a text leaf");
+    let rect = editor.geometry().rect_of(text).expect("the text has a box");
+    assert!(editor.click(
+        Point {
+            x: rect.x + 12.0,
+            y: rect.y + 2.0
+        },
+        false
+    ));
+
+    press(&mut editor, Key::Character('x'));
+    assert_eq!(editor.source(), "\\text{axb}");
+    assert!(press(&mut editor, Key::Backspace));
+    assert_eq!(editor.source(), "\\text{ab}");
+    assert!(press(&mut editor, Key::Delete));
+    assert_eq!(editor.source(), "\\text{a}");
+}
+
+#[test]
+fn an_ime_composition_edits_a_text_leaf_and_commits_in_one_undo() {
+    let mut editor = editor("\\text{ab}");
+    let text = find_text(editor.model(), editor.model().root()).expect("a text leaf");
+    let rect = editor.geometry().rect_of(text).expect("the text has a box");
+    assert!(editor.click(
+        Point {
+            x: rect.x + 12.0,
+            y: rect.y + 2.0
+        },
+        false
+    ));
+
+    assert!(editor.set_preedit("中", &FakeFont));
+    assert_eq!(editor.preedit(), Some("中"));
+    assert_eq!(editor.source(), "\\text{a中b}");
+    assert!(editor.commit_preedit("中文", &FakeFont));
+    assert_eq!(editor.source(), "\\text{a中文b}");
+    assert!(editor.undo(&FakeFont));
+    assert_eq!(editor.source(), "\\text{ab}");
+}
+
+#[test]
+fn one_backspace_removes_a_combined_grapheme() {
+    let mut editor = editor("\\text{e\u{301}}");
+    let text = find_text(editor.model(), editor.model().root()).expect("a text leaf");
+    let rect = editor.geometry().rect_of(text).expect("the text has a box");
+    assert!(editor.click(
+        Point {
+            x: rect.right(),
+            y: rect.y + 2.0
+        },
+        false
+    ));
+    assert!(press(&mut editor, Key::Backspace));
+    assert_eq!(editor.source(), "\\text{}");
+}
+
+#[test]
+fn shift_arrows_select_and_replace_inside_text() {
+    let mut editor = editor("\\text{abcd}");
+    let text = find_text(editor.model(), editor.model().root()).expect("a text leaf");
+    let rect = editor.geometry().rect_of(text).expect("the text has a box");
+    assert!(editor.click(
+        Point {
+            x: rect.x + 10.0,
+            y: rect.y + 2.0
+        },
+        false
+    ));
+    assert!(press_shift(&mut editor, Key::Right));
+    assert!(!editor.selection().is_empty());
+    assert_eq!(editor.selection_latex().as_deref(), Some("b"));
+    press(&mut editor, Key::Character('X'));
+    assert_eq!(editor.source(), "\\text{aXcd}");
+}

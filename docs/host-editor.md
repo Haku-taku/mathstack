@@ -167,6 +167,15 @@ line extents in em, so fallback fonts and combining marks stay a host concern.
 A character the shaper cannot render is returned in `ShapedRun::missing`, and
 layout reports one diagnostic at the construct's span.
 
+Each `ShapedGlyph` also carries `cluster`, the byte offset in the shaped string
+where its cluster starts. An editable `\text` leaf gets one caret per distinct
+cluster boundary, so a ligature (one glyph for `ffi`) cannot be split by a
+caret, while a combining mark shares its base's cluster. A host shaper must
+fill `cluster`; without it the fallback still renders, but caret mapping
+degrades to the boundaries it reports. The editor edits the leaf's string by
+grapheme, so Backspace removes a whole `e` + combining acute or emoji ZWJ
+sequence even when the geometry exposes intermediate stops.
+
 ## Source spans
 
 The editor's source is its export. Every layout writes the model through

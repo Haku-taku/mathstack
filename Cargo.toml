@@ -29,3 +29,4 @@ math-font = { path = "crates/math-font" }
 math-svg = { path = "crates/math-svg" }
 math-syntax = { path = "crates/math-syntax" }
 ttf-parser = "0.25"
+unicode-segmentation = "1"

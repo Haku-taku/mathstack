@@ -15,6 +15,7 @@ use math_syntax::{
     to_latex_with_spans_and_spellings, to_latex_with_spellings,
 };
 use std::sync::Arc;
+use unicode_segmentation::UnicodeSegmentation;
 
 /// The edits a host forwards; modifier state is a separate argument because
 /// only Shift changes what an editor command means.
@@ -51,6 +52,17 @@ struct Preedit {
     before: Snapshot,
 }
 
+/// A composition inside a `Text` leaf. The model holds the live composition
+/// text so layout and caret use the same string; `before` restores it on
+/// cancel and becomes the undo snapshot on commit.
+struct TextPreedit {
+    node: NodeId,
+    start: usize,
+    end: usize,
+    text: String,
+    before: Snapshot,
+}
+
 /// A formula being edited: model, layout, caret, selection and history.
 pub struct Editor {
     model: Model,
@@ -67,6 +79,7 @@ pub struct Editor {
     redo: Vec<Snapshot>,
     shaper: Option<Arc<dyn TextShaper>>,
     preedit: Option<Preedit>,
+    text_preedit: Option<TextPreedit>,
     command: Option<String>,
     /// The name after a second `\`, as in `\left\langle`; `command` keeps
     /// the first name until both are resolved together.
@@ -113,6 +126,7 @@ impl Editor {
             redo: Vec::new(),
             shaper: None,
             preedit: None,
+            text_preedit: None,
             command: None,
             command_argument: None,
             command_bracket: None,
@@ -197,6 +211,9 @@ impl Editor {
 
     /// The live IME preedit, if any.
     pub fn preedit(&self) -> Option<&str> {
+        if let Some(preedit) = &self.text_preedit {
+            return Some(&preedit.text);
+        }
         let preedit = self.preedit.as_ref()?;
         match self.model.kind(preedit.node) {
             NodeKind::Composition(text) => Some(text),
@@ -232,6 +249,7 @@ impl Editor {
         self.undo.clear();
         self.redo.clear();
         self.preedit = None;
+        self.text_preedit = None;
         self.command = None;
         self.command_argument = None;
         self.command_bracket = None;
@@ -289,12 +307,29 @@ impl Editor {
 
     fn repair_caret(&mut self) {
         if self.geometry.caret(&self.caret).is_none() {
-            self.caret = self
-                .geometry
-                .carets()
+            let snapped = self
+                .caret
+                .steps
                 .last()
-                .map(|(path, _)| path.clone())
-                .unwrap_or_default();
+                .copied()
+                .filter(|step| matches!(self.model.try_kind(step.node), Some(NodeKind::Text(_))))
+                .and_then(|step| {
+                    let nearest = self
+                        .geometry
+                        .carets()
+                        .filter_map(|(path, _)| path.steps.last())
+                        .filter(|candidate| candidate.node == step.node)
+                        .map(|candidate| candidate.index)
+                        .min_by_key(|offset| offset.abs_diff(step.index))?;
+                    self.boundary_path(step.node, Slot::Body, nearest)
+                });
+            self.caret = snapped.unwrap_or_else(|| {
+                self.geometry
+                    .carets()
+                    .last()
+                    .map(|(path, _)| path.clone())
+                    .unwrap_or_default()
+            });
         }
         if let Some(anchor) = &self.anchor
             && self.geometry.caret(anchor).is_none()
@@ -341,6 +376,11 @@ impl Editor {
     /// through a structure copies the covered content inside it. This keeps
     /// the result valid LaTeX that `insert_latex` can parse again.
     pub fn selection_latex(&self) -> Option<String> {
+        if let Some((node, start, end)) = self.text_selection() {
+            return self
+                .text_value(node)
+                .map(|text| text[start..end].to_owned());
+        }
         let (low, high) = self.selection_range()?;
         let mut nodes = Vec::new();
         self.collect_covered(self.model.root(), low, high, &mut nodes);
@@ -411,13 +451,37 @@ impl Editor {
         if self.command.is_some() {
             return self.command_key(key, shift, font);
         }
-        if self.preedit.is_some() {
+        if self.preedit.is_some() || self.text_preedit.is_some() {
             if key == Key::Escape {
                 self.cancel_preedit(font);
                 return true;
             }
             let text = self.preedit().unwrap_or_default().to_owned();
             self.commit_preedit(&text, font);
+        }
+        if let Some((node, offset)) = self.text_caret() {
+            match key {
+                Key::Character(symbol) => {
+                    return self.insert_text_literal(node, offset, &symbol.to_string(), font);
+                }
+                Key::Backspace => return self.delete_text_before(node, offset, font),
+                Key::Delete => return self.delete_text_after(node, offset, font),
+                Key::Home => {
+                    if let Some(path) = self.boundary_path(node, Slot::Body, 0) {
+                        self.move_to(path, shift);
+                        return true;
+                    }
+                }
+                Key::End => {
+                    let length = self.text_value(node).map_or(0, str::len);
+                    if let Some(path) = self.boundary_path(node, Slot::Body, length) {
+                        self.move_to(path, shift);
+                        return true;
+                    }
+                }
+                Key::Escape => return self.anchor.take().is_some(),
+                _ => {}
+            }
         }
         match key {
             Key::Character('\\') => self.begin_command(font),
@@ -481,7 +545,7 @@ impl Editor {
         if self.command.is_some() {
             self.cancel_command(font);
         }
-        if self.preedit.is_some() {
+        if self.preedit.is_some() || self.text_preedit.is_some() {
             self.cancel_preedit(font);
         }
         let Some(snapshot) = self.undo.pop() else {
@@ -498,7 +562,7 @@ impl Editor {
         if self.command.is_some() {
             self.cancel_command(font);
         }
-        if self.preedit.is_some() {
+        if self.preedit.is_some() || self.text_preedit.is_some() {
             self.cancel_preedit(font);
         }
         let Some(snapshot) = self.redo.pop() else {
@@ -523,6 +587,67 @@ impl Editor {
         }
         if text.is_empty() {
             return self.cancel_preedit(font);
+        }
+        if let Some(mut preedit) = self.text_preedit.take() {
+            let Some(value) = self.text_value(preedit.node) else {
+                return false;
+            };
+            if preedit.end > value.len()
+                || !value.is_char_boundary(preedit.start)
+                || !value.is_char_boundary(preedit.end)
+            {
+                self.text_preedit = Some(preedit);
+                return false;
+            }
+            let mut value = value.to_owned();
+            value.replace_range(preedit.start..preedit.end, text);
+            if self
+                .replace_kind(preedit.node, NodeKind::Text(value))
+                .is_err()
+            {
+                self.text_preedit = Some(preedit);
+                return false;
+            }
+            self.model.set_origin(preedit.node, Origin::Synthetic);
+            preedit.end = preedit.start + text.len();
+            preedit.text = text.to_owned();
+            self.caret = self
+                .boundary_path(preedit.node, Slot::Body, preedit.end)
+                .unwrap_or_else(|| self.caret.clone());
+            self.anchor = None;
+            self.text_preedit = Some(preedit);
+            self.relayout(font);
+            return true;
+        }
+        if let Some((node, offset)) = self.text_caret() {
+            let before = self.snapshot();
+            let (selected, start, end) = self.text_selection().unwrap_or((node, offset, offset));
+            if selected != node {
+                return false;
+            }
+            let Some(value) = self.text_value(node) else {
+                return false;
+            };
+            let mut value = value.to_owned();
+            value.replace_range(start..end, text);
+            if self.replace_kind(node, NodeKind::Text(value)).is_err() {
+                return false;
+            }
+            self.model.set_origin(node, Origin::Synthetic);
+            let end = start + text.len();
+            self.caret = self
+                .boundary_path(node, Slot::Body, end)
+                .unwrap_or_else(|| self.caret.clone());
+            self.anchor = None;
+            self.text_preedit = Some(TextPreedit {
+                node,
+                start,
+                end,
+                text: text.to_owned(),
+                before,
+            });
+            self.relayout(font);
+            return true;
         }
         if self.preedit.is_some() {
             let Some(preedit) = &self.preedit else {
@@ -598,6 +723,24 @@ impl Editor {
         if self.command.is_some() {
             self.cancel_command(font);
         }
+        if let Some(preedit) = self.text_preedit.take() {
+            if text.is_empty() {
+                self.restore(preedit.before);
+                self.relayout(font);
+                return true;
+            }
+            if !self.replace_text_range(preedit.node, preedit.start, preedit.end, text, font) {
+                self.restore(preedit.before);
+                self.relayout(font);
+                return false;
+            }
+            self.redo.clear();
+            self.undo.push(preedit.before);
+            if self.undo.len() > UNDO_LIMIT {
+                self.undo.remove(0);
+            }
+            return true;
+        }
         let Some(preedit) = self.preedit.take() else {
             return self.insert_text(text, font);
         };
@@ -630,6 +773,11 @@ impl Editor {
     }
 
     pub fn cancel_preedit(&mut self, font: &dyn MathFont) -> bool {
+        if let Some(preedit) = self.text_preedit.take() {
+            self.restore(preedit.before);
+            self.relayout(font);
+            return true;
+        }
         let Some(preedit) = self.preedit.take() else {
             return false;
         };
@@ -1209,6 +1357,129 @@ impl Editor {
         true
     }
 
+    /// The text leaf and byte offset when the caret is inside a `Text` node.
+    fn text_caret(&self) -> Option<(NodeId, usize)> {
+        let step = self.caret.steps.last()?;
+        if step.slot != Slot::Body {
+            return None;
+        }
+        let NodeKind::Text(text) = self.model.try_kind(step.node)? else {
+            return None;
+        };
+        (step.index <= text.len() && text.is_char_boundary(step.index))
+            .then_some((step.node, step.index))
+    }
+
+    fn text_value(&self, node: NodeId) -> Option<&str> {
+        match self.model.try_kind(node)? {
+            NodeKind::Text(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    fn text_selection(&self) -> Option<(NodeId, usize, usize)> {
+        let anchor = self.anchor.as_ref()?;
+        let (node, focus) = self.text_caret()?;
+        let step = anchor.steps.last()?;
+        if step.node != node || step.slot != Slot::Body {
+            return None;
+        }
+        let text = self.text_value(node)?;
+        if !text.is_char_boundary(step.index) {
+            return None;
+        }
+        Some((node, step.index.min(focus), step.index.max(focus)))
+    }
+
+    /// Replaces `start..end` in a text leaf and puts the caret after the
+    /// replacement. The caller owns the undo boundary.
+    fn replace_text_range(
+        &mut self,
+        node: NodeId,
+        start: usize,
+        end: usize,
+        replacement: &str,
+        font: &dyn MathFont,
+    ) -> bool {
+        let Some(text) = self.text_value(node) else {
+            return false;
+        };
+        if start > end
+            || end > text.len()
+            || !text.is_char_boundary(start)
+            || !text.is_char_boundary(end)
+        {
+            return false;
+        }
+        let mut value = text.to_owned();
+        value.replace_range(start..end, replacement);
+        if self.replace_kind(node, NodeKind::Text(value)).is_err() {
+            return false;
+        }
+        self.model.set_origin(node, Origin::Synthetic);
+        let offset = start + replacement.len();
+        self.caret = self
+            .boundary_path(node, Slot::Body, offset)
+            .unwrap_or_else(|| self.caret.clone());
+        self.anchor = None;
+        self.relayout(font);
+        true
+    }
+
+    fn insert_text_literal(
+        &mut self,
+        node: NodeId,
+        offset: usize,
+        text: &str,
+        font: &dyn MathFont,
+    ) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+        let (selected, start, end) = self.text_selection().unwrap_or((node, offset, offset));
+        if selected != node {
+            return false;
+        }
+        self.begin();
+        let changed = self.replace_text_range(node, start, end, text, font);
+        self.end();
+        changed
+    }
+
+    fn delete_text_before(&mut self, node: NodeId, offset: usize, font: &dyn MathFont) -> bool {
+        let Some(text) = self.text_value(node) else {
+            return false;
+        };
+        let Some(start) = text[..offset]
+            .grapheme_indices(true)
+            .next_back()
+            .map(|(index, _)| index)
+        else {
+            return false;
+        };
+        self.begin();
+        let changed = self.replace_text_range(node, start, offset, "", font);
+        self.end();
+        changed
+    }
+
+    fn delete_text_after(&mut self, node: NodeId, offset: usize, font: &dyn MathFont) -> bool {
+        let Some(text) = self.text_value(node) else {
+            return false;
+        };
+        let Some(end) = text[offset..]
+            .graphemes(true)
+            .next()
+            .map(|grapheme| offset + grapheme.len())
+        else {
+            return false;
+        };
+        self.begin();
+        let changed = self.replace_text_range(node, offset, end, "", font);
+        self.end();
+        changed
+    }
+
     fn insert_atom(&mut self, symbol: char, font: &dyn MathFont) -> bool {
         self.begin();
         self.delete_selection_raw(font);
@@ -1460,6 +1731,10 @@ impl Editor {
     }
 
     fn delete_selection_raw(&mut self, font: &dyn MathFont) -> bool {
+        if let Some((node, start, end)) = self.text_selection() {
+            self.anchor = None;
+            return self.replace_text_range(node, start, end, "", font);
+        }
         let Some(anchor) = self.anchor.clone() else {
             return false;
         };

@@ -13,14 +13,14 @@ use crate::class::{AtomClass, gap};
 use crate::color::Color;
 use crate::display::{BackgroundItem, GlyphItem, Item, Layout, LineItem, RuleItem};
 use crate::font::{GlyphId, MathFont, Stretched};
-use crate::geometry::Geometry;
+use crate::geometry::{Geometry, TextBox};
 use crate::node::{
     Alignment, ColumnSpacing, DelimiterSize, FractionRule, Length, Model, NodeId, NodeKind,
     PhantomKind, Slot, SpaceKind,
 };
 use crate::span::Span;
 use crate::style::{Size, Style};
-use crate::text::{FontShaper, TextShaper, TextStyle};
+use crate::text::{FontShaper, ShapedRun, TextShaper, TextStyle};
 
 /// What kind of problem a diagnostic reports. A host can treat `Incomplete`
 /// as "still typing" and surface the rest.
@@ -200,6 +200,9 @@ pub(crate) struct MathBox {
     pub(crate) children: Vec<Placed>,
     /// The em of an empty row's slot, which has no content to measure.
     pub(crate) empty_em: Option<f32>,
+    /// Text caret boundaries, in bytes from the start of the text and points
+    /// from this box's origin. Only an editable `Text` leaf carries them.
+    pub(crate) text: Option<TextBox>,
 }
 
 pub(crate) struct Placed {
@@ -221,6 +224,7 @@ impl MathBox {
             items: Vec::new(),
             children: Vec::new(),
             empty_em: None,
+            text: None,
         }
     }
 
@@ -359,11 +363,11 @@ fn layout_kind(
         NodeKind::Accent { base, symbol } => {
             layout_accent(cx, *base, *symbol, span, size, style, diagnostics)
         }
-        NodeKind::Text(text)
-        | NodeKind::Composition(text)
+        NodeKind::Text(text) => layout_text(cx, text, span, size, style, diagnostics, true),
+        NodeKind::Composition(text)
         | NodeKind::Error(text)
         | NodeKind::Function { name: text, .. } => {
-            layout_text(cx, text, span, size, style, diagnostics)
+            layout_text(cx, text, span, size, style, diagnostics, false)
         }
         NodeKind::Space(kind) => layout_space(cx, *kind, size, style),
         NodeKind::Hspace(length) => layout_hspace(cx, *length, size, style),
@@ -595,6 +599,7 @@ fn layout_atom(
             size: em,
         })],
         empty_em: None,
+        text: None,
     }
 }
 
@@ -626,6 +631,7 @@ fn layout_text(
     size: f32,
     style: Style,
     diagnostics: &mut Vec<Diagnostic>,
+    editable: bool,
 ) -> MathBox {
     let em = style.em(cx.font, size);
     let run = cx.shaper.shape(text, TextStyle::default());
@@ -633,6 +639,11 @@ fn layout_text(
     out.width = run.width * em;
     out.ascent = run.ascent * em;
     out.descent = run.descent * em;
+    if editable {
+        out.text = Some(TextBox {
+            boundaries: text_boundaries(text, &run, em),
+        });
+    }
     for glyph in run.glyphs {
         out.items.push(Item::Glyph(GlyphItem {
             color: None,
@@ -649,6 +660,22 @@ fn layout_text(
         ));
     }
     out
+}
+
+/// Caret boundaries for a shaped text leaf. A glyph starts a new cluster only
+/// when its cluster offset advances, so a ligature cannot be split by a caret.
+fn text_boundaries(text: &str, run: &ShapedRun, em: f32) -> Vec<(usize, f32)> {
+    let mut boundaries = vec![(0, 0.0)];
+    for glyph in &run.glyphs {
+        let offset = glyph.cluster.min(text.len());
+        if offset > boundaries.last().map_or(0, |(last, _)| *last) {
+            boundaries.push((offset, glyph.x * em));
+        }
+    }
+    if text.len() > boundaries.last().map_or(0, |(last, _)| *last) {
+        boundaries.push((text.len(), run.width * em));
+    }
+    boundaries
 }
 
 fn layout_row(
@@ -933,6 +960,7 @@ fn layout_scripts(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
     out.push_child(base, 0.0, 0.0, Slot::Base);
     if let Some(script) = sup {
@@ -995,6 +1023,7 @@ fn layout_limits(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
     let base_dx = (width - base.width) / 2.0;
     out.push_child(base, base_dx, 0.0, Slot::Base);
@@ -1076,6 +1105,7 @@ fn layout_delimited(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
     if let Some(delimiter) = left {
         out.ascent = out.ascent.max(delimiter.ascent);
@@ -1127,6 +1157,7 @@ fn delimiter_box(
                 size: em,
             })],
             empty_em: None,
+            text: None,
         };
     }
 
@@ -1144,6 +1175,7 @@ fn delimiter_box(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
     emit_stretched(cx, &stretched, 0.0, -ascent, em, &mut out.items);
     out
@@ -1187,6 +1219,7 @@ fn layout_large_op(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
     emit_stretched(cx, &stretched, 0.0, -ascent, em, &mut out.items);
     out
@@ -1247,6 +1280,7 @@ fn layout_accent(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
     out.push_child(base, base_dx, 0.0, Slot::Base);
     out.items.push(Item::Glyph(GlyphItem {
@@ -1406,6 +1440,7 @@ fn layout_bar(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
     let rule_y = if over {
         out.ascent = body.ascent + gap + thickness + extra;
@@ -1518,6 +1553,7 @@ fn layout_boxed(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
     out.push_child(body, padding + thickness, 0.0, Slot::Body);
     let height = ascent + descent;
@@ -1582,6 +1618,7 @@ fn layout_over_under(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
     let base_dx = (width - base.width) / 2.0;
     out.push_child(base, base_dx, 0.0, Slot::Base);
@@ -1750,6 +1787,7 @@ fn layout_radical(
         children: Vec::new(),
         items: Vec::new(),
         empty_em: None,
+        text: None,
     };
 
     let mut x = 0.0;
