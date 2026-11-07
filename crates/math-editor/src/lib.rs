@@ -2332,28 +2332,36 @@ impl Editor {
         false
     }
 
-    /// Drops a row that a deletion left holding one child in a single-child
-    /// slot. The row was a caret container, so its braces are not content.
+    /// Drops a construct a deletion left as a wrapper the export already omits: a row
+    /// holding one child in a single-child slot, or a scripts node that lost its last
+    /// script. The row was a caret container and the scripts node a caret hop, so neither
+    /// is content — and leaving either behind makes Backspace stall inside it.
     fn collapse_redundant_rows(&mut self) {
         loop {
             let ids: Vec<NodeId> = self.model.ids().collect();
             let mut target = None;
             for parent in ids {
                 for (child, slot, index) in self.indexed_children(parent) {
-                    if self.model.kind(parent).slot_is_list(slot)
-                        || matches!(
-                            (self.model.kind(parent), slot),
-                            (NodeKind::Delimited { .. }, Slot::Body)
-                        )
-                    {
-                        // A delimiter body must stay a row: `\middle` is laid
-                        // out only when it is a direct child of that row.
-                        continue;
-                    }
-                    if let NodeKind::Row(children) = self.model.kind(child)
-                        && let [only] = children.as_slice()
-                    {
-                        target = Some((parent, slot, index, child, *only));
+                    let kind = self.model.kind(parent);
+                    // A delimiter body must stay a row: `\middle` is laid out only when it
+                    // is a direct child of that row. A list slot keeps a row too, because a
+                    // row there is the group the source wrote.
+                    let collapses_row = !kind.slot_is_list(slot)
+                        && !matches!((kind, slot), (NodeKind::Delimited { .. }, Slot::Body));
+                    let replacement = match self.model.kind(child) {
+                        NodeKind::Scripts {
+                            base,
+                            sup: None,
+                            sub: None,
+                        } => Some(*base),
+                        NodeKind::Row(children) if collapses_row => match children.as_slice() {
+                            [only] => Some(*only),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+                    if let Some(replacement) = replacement {
+                        target = Some((parent, slot, index, child, replacement));
                         break;
                     }
                 }
@@ -2361,17 +2369,21 @@ impl Editor {
                     break;
                 }
             }
-            let Some((parent, slot, index, row, only)) = target else {
+            let Some((parent, slot, index, wrapper, replacement)) = target else {
                 break;
             };
-            if self.model.set_child(parent, slot, index, only).is_err() {
+            if self
+                .model
+                .set_child(parent, slot, index, replacement)
+                .is_err()
+            {
                 break;
             }
-            self.caret = remap_across_collapsed_row(&self.caret, row, parent, slot, index);
+            self.caret = remap_across_collapsed(&self.caret, wrapper, parent, slot, index);
             if let Some(anchor) = &self.anchor {
-                self.anchor = Some(remap_across_collapsed_row(anchor, row, parent, slot, index));
+                self.anchor = Some(remap_across_collapsed(anchor, wrapper, parent, slot, index));
             }
-            self.spellings.remove(row);
+            self.spellings.remove(wrapper);
         }
     }
 
@@ -2743,18 +2755,14 @@ fn delimiter_fence(symbol: char) -> Option<Option<char>> {
 }
 
 /// Rewrites a caret path that crossed a row now replaced by its only child.
-fn remap_across_collapsed_row(
+fn remap_across_collapsed(
     path: &CaretPath,
-    row: NodeId,
+    wrapper: NodeId,
     parent: NodeId,
     slot: Slot,
-    row_index: usize,
+    wrapper_index: usize,
 ) -> CaretPath {
-    let Some(position) = path
-        .steps
-        .iter()
-        .position(|step| step.node == row && step.slot == Slot::Body)
-    else {
+    let Some(position) = path.steps.iter().position(|step| step.node == wrapper) else {
         return path.clone();
     };
     let index = path.steps[position].index;
@@ -2762,7 +2770,7 @@ fn remap_across_collapsed_row(
     steps.push(Step {
         node: parent,
         slot,
-        index: row_index + usize::from(index > 0),
+        index: wrapper_index + usize::from(index > 0),
     });
     if index == 0 {
         steps.extend_from_slice(&path.steps[position + 1..]);

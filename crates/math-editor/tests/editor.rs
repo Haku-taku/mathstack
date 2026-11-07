@@ -566,6 +566,24 @@ fn empty_slots_leave_without_deleting_their_base() {
 }
 
 #[test]
+fn an_emptied_script_leaves_no_wrapper_to_trap_the_caret() {
+    // A scripts node that lost its last script exports as its base, so nothing draws it;
+    // kept in the model, it was a construct Backspace could neither enter nor remove.
+    let mut editor = editor("\\int_0^1 x^2");
+    press(&mut editor, Key::End);
+    let mut presses = 0;
+    while press(&mut editor, Key::Backspace) {
+        presses += 1;
+        assert!(
+            presses < 80,
+            "a deletion loop must end: {:?}",
+            editor.source()
+        );
+    }
+    assert_eq!(editor.source(), "");
+}
+
+#[test]
 fn backspace_removes_a_command_whose_slots_are_all_empty() {
     // Nothing inside the fraction can be taken: the command itself is what goes.
     let mut fraction = editor("\\frac{}{}");

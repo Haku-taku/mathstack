@@ -163,6 +163,11 @@ the caret to the slot's start and Delete moves it to its end; a further press
 leaves the structure. This stops a deletion at a slot boundary from walking into the
 base or the other required child.
 
+A scripts node that loses its last script is dropped and its base takes its
+place: the export already writes it as the bare base, so a wrapper left in the
+model would be a construct neither drawn nor removable, and Backspace would
+stop inside it.
+
 A command whose every slot holds an empty row has nothing inside for Backspace
 to take, so the press removes the command itself and the caret lands where it
 stood. `\frac{}{}` and `\sqrt[]{}` go in one press; `\sqrt[3]{}` keeps its
@@ -472,6 +477,14 @@ another key. This is a manual check, not a golden-image gate.
   synthetic and macro-expanded nodes fall back to the canonical export. The
   parser test pins the split between `Document::to_latex` and the canonical
   `to_latex`.
+- **A scriptless scripts node trapped the caret.** Removing an empty
+  superscript left `Scripts { base, None, None }` in the model; the writer
+  drops the wrapper and exports the base, so nothing showed it, but Backspace
+  saw a child with content, skipped it, and stepped into a base slot it could
+  not clear — a formula deleted from the end stalled at `\int x`. The
+  collapse pass that drops redundant rows now also replaces a scripts node with
+  no scripts by its base and remaps the caret through it. Pinned by
+  `an_emptied_script_leaves_no_wrapper_to_trap_the_caret`.
 - **An empty slot offered three carets.** The collector emitted a stop before
   and after every child and then entered the child, so a placeholder showed
   left, centre and right, two of them at the same x; a Backspace taken at the
