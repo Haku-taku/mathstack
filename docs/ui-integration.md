@@ -91,13 +91,18 @@ by source anyway.
 ## Remaining gaps
 
 - Structural editing is wired to the display control (7.5): `Math::editable()`
-  in `crabsnap-ng` focuses a formula, routes keys, text and preedit to a
-  `math-editor` instance the text pass keeps per node, paints the caret,
-  selection and empty slots from the same layout, and reports the new source to
-  the app. An embedded formula (`Math::in_text`) rewrites its own byte range of
-  the host document's buffer, which is how a Markdown display block edits in
-  place; the Markdown source mode floats a preview beside it. Inline formulas
-  and the editable-container entries (7.7) are not wired.
+  in `crabsnap-ng` routes keys, text and preedit to a `math-editor` instance the
+  text pass keeps per node, paints the caret, selection and empty slots from the
+  same layout, and reports the new source to the app. A standalone formula takes
+  focus; an embedded one (`Math::in_text`) does not, because its host document
+  owns the caret. Its bytes are input views, a press maps through the editor's
+  hit test, and the export is spliced back with the engine's own `apply_edit`,
+  so the document keeps one caret, one history and one copy path. That needs the
+  offset seam: `Editor::offset_of`, `caret_at_offset`, `caret_offset`,
+  `anchor_offset`, `selection_offsets`, `set_selection_offsets` and `offset_at`
+  here, `MathEdit::{selection_offsets, select_offsets, offset_at, formula_at}` in
+  the engine. Inline formulas and the editable-container entries (7.7) are not
+  wired.
 - The editor cannot yet reach environments that take their own arguments
   (`array`, `matrix*`, `alignat`), and an environment name or `\hspace` length
   cannot be edited after insertion. `\pmod` exports as its expansion, so its
