@@ -105,6 +105,9 @@ pub fn command_template(name: &str) -> Option<String> {
             Some(format!("\\{name}{{}}"))
         }
         CommandShape::Special if name == "pmod" => Some("\\pmod{}".to_owned()),
+        // The four empty prefix arguments leave a plain fraction; the parser
+        // resolves `\genfrac` into the same fraction node `\frac` produces.
+        CommandShape::Special if name == "genfrac" => Some("\\genfrac{}{}{}{}{}{}".to_owned()),
         CommandShape::MathArgument
         | CommandShape::VariantArgument
         | CommandShape::OptionalMathArgument

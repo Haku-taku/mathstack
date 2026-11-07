@@ -787,6 +787,15 @@ fn editing_a_named_operator_rewrites_its_name() {
 }
 
 #[test]
+fn an_empty_genfrac_puts_the_caret_in_the_numerator() {
+    let mut editor = editor("");
+    press_command(&mut editor, "genfrac");
+    press(&mut editor, Key::Character(' '));
+    press(&mut editor, Key::Character('a'));
+    assert_eq!(editor.source(), "\\frac {a}{}");
+}
+
+#[test]
 fn an_empty_pmod_puts_the_caret_in_its_argument() {
     let mut editor = editor("");
     press_command(&mut editor, "pmod");
