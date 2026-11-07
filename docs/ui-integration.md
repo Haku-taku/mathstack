@@ -94,8 +94,10 @@ by source anyway.
   in `crabsnap-ng` focuses a formula, routes keys, text and preedit to a
   `math-editor` instance the text pass keeps per node, paints the caret,
   selection and empty slots from the same layout, and reports the new source to
-  the app. Inline formulas, the Markdown source/popover modes (7.6) and the
-  editable-container entries (7.7) are not wired.
+  the app. An embedded formula (`Math::in_text`) rewrites its own byte range of
+  the host document's buffer, which is how a Markdown display block edits in
+  place; the Markdown source mode floats a preview beside it. Inline formulas
+  and the editable-container entries (7.7) are not wired.
 - The editor cannot yet reach environments that take their own arguments
   (`array`, `matrix*`, `alignat`), and an environment name or `\hspace` length
   cannot be edited after insertion. `\pmod` exports as its expansion, so its

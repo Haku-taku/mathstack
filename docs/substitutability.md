@@ -153,9 +153,10 @@ long-tail symbols, and the MathML/event/full-TeX surfaces.
 stack: `ui-math` parses with `math-syntax`, lays out with `math-core`, and
 converts to `ui_core::Formula`, including stroked lines for `\cancel`. Structural
 editing is wired for the display control through `Math::editable()`, which
-drives a `math-editor` instance behind the engine's `MathEdit` door; the
-Markdown editing modes and inline formulas are still unwired. `ui-integration.md`
-records the seam, the mapping and what is left.
+drives a `math-editor` instance behind the engine's `MathEdit` door, and a
+Markdown display block edits in place through the same control. Inline formulas
+are still unwired. `ui-integration.md` records the seam, the mapping and what is
+left.
 
 The exclusions are boundaries, not missing polish: a MathML front end, an
 event API, a TeX engine and the complete KaTeX surface are different products.
