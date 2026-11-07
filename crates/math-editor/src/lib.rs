@@ -87,6 +87,8 @@ pub struct Editor {
     /// Math source typed inside an optional `[...]` argument, kept as text so
     /// the parser is still the only grammar. `None` outside that bracket.
     command_bracket: Option<String>,
+    /// The environment name being typed after `\begin`, before its `}`.
+    command_environment: Option<String>,
     /// The `Composition` node that shows the command being typed, and the
     /// document before it appeared. Cancelling restores that snapshot.
     command_node: Option<NodeId>,
@@ -130,6 +132,7 @@ impl Editor {
             command: None,
             command_argument: None,
             command_bracket: None,
+            command_environment: None,
             command_node: None,
             command_before: None,
             command_ime_start: None,
@@ -253,6 +256,7 @@ impl Editor {
         self.command = None;
         self.command_argument = None;
         self.command_bracket = None;
+        self.command_environment = None;
         self.command_node = None;
         self.command_before = None;
         self.command_ime_start = None;
@@ -817,7 +821,18 @@ impl Editor {
         if self.command_bracket.is_some() {
             return self.command_bracket_key(key, shift, font);
         }
+        if self.command_environment.is_some() {
+            return self.command_environment_key(key, shift, font);
+        }
         match key {
+            // `\begin{name}` is one buffered spelling: the name is collected
+            // before the parser sees the environment.
+            Key::Character('{') if self.command.as_deref() == Some("begin") => {
+                self.command_environment = Some(String::new());
+                self.command_ime_start = None;
+                self.update_command(font);
+                true
+            }
             // An optional argument starts with `[`; resolving the bare command
             // here would drop the bracket and apply the template instead.
             Key::Character('[') if self.command.as_deref().is_some_and(optional_argument_shape) => {
@@ -884,7 +899,7 @@ impl Editor {
                         matches!(
                             command_shape(name),
                             CommandShape::Delimiter | CommandShape::SymbolArgument
-                        )
+                        ) || name == "begin"
                     }) =>
             {
                 true
@@ -971,6 +986,52 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// Keys inside the environment name after `\begin`; `}` resolves the
+    /// whole `\begin{…}\end{…}` snippet through the parser.
+    fn command_environment_key(&mut self, key: Key, shift: bool, font: &dyn MathFont) -> bool {
+        match key {
+            Key::Character(symbol) if symbol.is_ascii_alphabetic() || symbol == '*' => {
+                if let Some(name) = &mut self.command_environment {
+                    name.push(symbol);
+                }
+                self.command_ime_start = None;
+                self.update_command(font);
+                true
+            }
+            Key::Character('}') => self.finish_command_environment(font),
+            Key::Backspace => {
+                if let Some(name) = &mut self.command_environment {
+                    name.pop();
+                }
+                self.command_ime_start = None;
+                self.update_command(font);
+                true
+            }
+            Key::Escape => self.cancel_command(font),
+            _ => {
+                let finished = self.finish_command_environment(font);
+                if finished {
+                    self.key(key, shift, font) || true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    fn finish_command_environment(&mut self, font: &dyn MathFont) -> bool {
+        let Some(name) = self.command_environment.take() else {
+            return false;
+        };
+        self.command_ime_start = None;
+        if name.is_empty() {
+            self.cancel_command(font);
+            self.message = Some("`\\begin` needs an environment name".to_owned());
+            return true;
+        }
+        self.resolve_command_with(Some(format!("\\begin{{{name}}}\\end{{{name}}}")), font)
     }
 
     /// Keys inside an optional `[...]` argument. Its content is math source
@@ -1097,7 +1158,10 @@ impl Editor {
         let text = match (&self.command_argument, &self.command_bracket) {
             (Some(argument), _) => NodeKind::Composition(format!("\\{name}\\{argument}")),
             (None, Some(bracket)) => NodeKind::Composition(format!("\\{name}[{bracket}")),
-            (None, None) => NodeKind::Composition(format!("\\{name}")),
+            (None, None) => match &self.command_environment {
+                Some(environment) => NodeKind::Composition(format!("\\{name}{{{environment}")),
+                None => NodeKind::Composition(format!("\\{name}")),
+            },
         };
         if self.replace_kind(node, text).is_ok() {
             self.relayout(font);
@@ -1108,7 +1172,9 @@ impl Editor {
     /// before it commits). Replace its previous tail instead of cancelling the
     /// pending command, so `\` followed by an IME `f` stays `\f`.
     fn absorb_command_ime(&mut self, text: &str, font: &dyn MathFont) -> bool {
-        let target = if let Some(bracket) = self.command_bracket.as_mut() {
+        let target = if let Some(environment) = self.command_environment.as_mut() {
+            environment
+        } else if let Some(bracket) = self.command_bracket.as_mut() {
             bracket
         } else if let Some(argument) = self.command_argument.as_mut() {
             argument
@@ -1131,6 +1197,7 @@ impl Editor {
         let had_command = self.command.take().is_some();
         self.command_argument = None;
         self.command_bracket = None;
+        self.command_environment = None;
         self.command_ime_start = None;
         let node = self.command_node.take();
         let Some(before) = self.command_before.take() else {
@@ -1158,6 +1225,7 @@ impl Editor {
         };
         self.command_argument = None;
         self.command_bracket = None;
+        self.command_environment = None;
         self.command_ime_start = None;
         let before = self.command_before.take();
         if let Some(node) = self.command_node.take() {
@@ -1183,7 +1251,11 @@ impl Editor {
             if let Some(before) = before {
                 self.restore(before);
             }
-            self.message = Some(format!("unknown command \\{name}"));
+            self.message = Some(if name == "begin" {
+                "unsupported environment".to_owned()
+            } else {
+                format!("unknown command \\{name}")
+            });
             self.relayout(font);
             return true;
         }

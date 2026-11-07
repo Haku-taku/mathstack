@@ -805,6 +805,19 @@ fn an_empty_substack_opens_its_first_cell() {
 }
 
 #[test]
+fn typing_an_environment_name_opens_its_first_cell() {
+    let mut editor = editor("");
+    press_command(&mut editor, "begin");
+    press(&mut editor, Key::Character('{'));
+    for symbol in "matrix".chars() {
+        press(&mut editor, Key::Character(symbol));
+    }
+    press(&mut editor, Key::Character('}'));
+    press(&mut editor, Key::Character('a'));
+    assert_eq!(editor.source(), "\\begin {matrix}a\\end {matrix}");
+}
+
+#[test]
 fn an_empty_pmod_puts_the_caret_in_its_argument() {
     let mut editor = editor("");
     press_command(&mut editor, "pmod");
