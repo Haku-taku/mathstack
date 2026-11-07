@@ -312,7 +312,12 @@ impl Editor {
                 .steps
                 .last()
                 .copied()
-                .filter(|step| matches!(self.model.try_kind(step.node), Some(NodeKind::Text(_))))
+                .filter(|step| {
+                    matches!(
+                        self.model.try_kind(step.node),
+                        Some(NodeKind::Text(_) | NodeKind::Function { .. })
+                    )
+                })
                 .and_then(|step| {
                     let nearest = self
                         .geometry
@@ -601,10 +606,11 @@ impl Editor {
             }
             let mut value = value.to_owned();
             value.replace_range(preedit.start..preedit.end, text);
-            if self
-                .replace_kind(preedit.node, NodeKind::Text(value))
-                .is_err()
-            {
+            let Some(kind) = self.text_kind(preedit.node, value) else {
+                self.text_preedit = Some(preedit);
+                return false;
+            };
+            if self.replace_kind(preedit.node, kind).is_err() {
                 self.text_preedit = Some(preedit);
                 return false;
             }
@@ -630,7 +636,10 @@ impl Editor {
             };
             let mut value = value.to_owned();
             value.replace_range(start..end, text);
-            if self.replace_kind(node, NodeKind::Text(value)).is_err() {
+            let Some(kind) = self.text_kind(node, value) else {
+                return false;
+            };
+            if self.replace_kind(node, kind).is_err() {
                 return false;
             }
             self.model.set_origin(node, Origin::Synthetic);
@@ -1363,16 +1372,30 @@ impl Editor {
         if step.slot != Slot::Body {
             return None;
         }
-        let NodeKind::Text(text) = self.model.try_kind(step.node)? else {
-            return None;
+        let length = match self.model.try_kind(step.node)? {
+            NodeKind::Text(text) => text.len(),
+            NodeKind::Function { name, .. } => name.len(),
+            _ => return None,
         };
-        (step.index <= text.len() && text.is_char_boundary(step.index))
+        (step.index <= length && self.text_value(step.node)?.is_char_boundary(step.index))
             .then_some((step.node, step.index))
     }
 
     fn text_value(&self, node: NodeId) -> Option<&str> {
         match self.model.try_kind(node)? {
             NodeKind::Text(text) => Some(text),
+            NodeKind::Function { name, .. } => Some(name),
+            _ => None,
+        }
+    }
+
+    fn text_kind(&self, node: NodeId, value: String) -> Option<NodeKind> {
+        match self.model.try_kind(node)? {
+            NodeKind::Text(_) => Some(NodeKind::Text(value)),
+            NodeKind::Function { limits, .. } => Some(NodeKind::Function {
+                name: value,
+                limits: *limits,
+            }),
             _ => None,
         }
     }
@@ -1413,7 +1436,10 @@ impl Editor {
         }
         let mut value = text.to_owned();
         value.replace_range(start..end, replacement);
-        if self.replace_kind(node, NodeKind::Text(value)).is_err() {
+        let Some(kind) = self.text_kind(node, value) else {
+            return false;
+        };
+        if self.replace_kind(node, kind).is_err() {
             return false;
         }
         self.model.set_origin(node, Origin::Synthetic);
@@ -1675,10 +1701,12 @@ impl Editor {
                 self.anchor = None;
                 return true;
             }
-            if let NodeKind::Text(text) = self.model.kind(*node)
-                && text.is_empty()
-                && let Some(path) = self.boundary_path(*node, Slot::Body, 0)
-            {
+            let empty = match self.model.kind(*node) {
+                NodeKind::Text(text) => text.is_empty(),
+                NodeKind::Function { name, .. } => name.is_empty(),
+                _ => false,
+            };
+            if empty && let Some(path) = self.boundary_path(*node, Slot::Body, 0) {
                 self.caret = path;
                 self.anchor = None;
                 return true;
@@ -2414,23 +2442,14 @@ fn is_empty_row(kind: &NodeKind) -> bool {
 
 /// The first empty row in a subtree, as the boundary that leads into it.
 fn first_empty_slot(model: &Model, id: NodeId) -> Option<(NodeId, Slot, usize)> {
-    let mut counts: Vec<(Slot, usize)> = Vec::new();
     for child in model.kind(id).children() {
-        let index = counts
-            .iter()
-            .find(|(slot, _)| *slot == child.slot)
-            .map_or(0, |(_, count)| *count);
         if let NodeKind::Row(children) = model.kind(child.id)
             && children.is_empty()
         {
-            return Some((id, child.slot, index));
+            return Some((child.id, Slot::Body, 0));
         }
         if let Some(found) = first_empty_slot(model, child.id) {
             return Some(found);
-        }
-        match counts.iter_mut().find(|(slot, _)| *slot == child.slot) {
-            Some((_, count)) => *count += 1,
-            None => counts.push((child.slot, 1)),
         }
     }
     None

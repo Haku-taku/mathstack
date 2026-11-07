@@ -71,7 +71,14 @@ base's cluster. Editing a range replaces the string and relayouts; if the new
 string forms a different cluster, the caret snaps to the nearest boundary the
 new shape offers. Backspace, Delete and IME commits move by grapheme, so a
 combining sequence or emoji ZWJ stays one editing unit even when the geometry
-has a stop inside it.
+has a stop inside it. A `Function` name uses the same text path, so
+`\operatorname{...}` is edited string-wise while its `Limits` survive.
+
+Glue is part of the row's child list rather than only its width. Geometry
+indices address the model's children, so a space that was measured but not
+listed shifted every caret after it by one slot; keeping the zero-height space
+box in `MathBox::children` makes `\pmod{}` and any row with `\quad` editable at
+the right position.
 
 ## Verification
 

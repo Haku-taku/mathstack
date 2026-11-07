@@ -94,6 +94,10 @@ pub fn command_template(name: &str) -> Option<String> {
     match command_shape(name) {
         CommandShape::TwoMathArguments => Some(format!("\\{name}{{}}{{}}")),
         CommandShape::NameArgument if name == "text" => Some("\\text{}".to_owned()),
+        CommandShape::NameArgument if matches!(name, "operatorname" | "operatornamewithlimits") => {
+            Some(format!("\\{name}{{}}"))
+        }
+        CommandShape::Special if name == "pmod" => Some("\\pmod{}".to_owned()),
         CommandShape::MathArgument
         | CommandShape::VariantArgument
         | CommandShape::OptionalMathArgument

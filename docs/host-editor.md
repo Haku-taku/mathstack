@@ -70,9 +70,11 @@ arguments, an optional bracket plus a math argument, a name/text argument, an
 environment name, a length, a relation symbol, or a special form the generic
 template cannot express. The editor uses that table instead of keeping its own
 command list; `command_template` derives the empty-argument snippet only for
-shapes whose empty form is meaningful. Font arguments and `\text` have a
-template because their containers are editable; the remaining name arguments
-have none until their model can hold one.
+shapes whose empty form is meaningful. Font arguments, `\text`,
+`\operatorname`/`\operatornamewithlimits` and `\pmod` have a template because
+their arguments are editable nodes; `\begin`, `\hspace`, `\genfrac` and
+`\substack` have none because their arguments are not (an environment name, a
+length or a delimiter list has no node the caret can enter).
 
 Commands whose next token is a delimiter consume the key that ends the
 buffer instead of parsing a bare command:
@@ -106,10 +108,12 @@ Whitespace between a delimiter command and its fence is ignored, as in LaTeX.
 A `\right` or `\middle` without an enclosing `\left` removes the buffer and
 reports it. Font commands such as `\mathbb` insert a `Variant` container with
 an empty body and put the caret inside it. `\text` inserts an empty `Text`
-leaf and puts the caret inside it, so text is edited as a string. Commands
-whose argument is a name — `\operatorname`, `\begin`, `\hspace`, `\genfrac`,
-`\substack` and `\pmod` — still reject keystroke entry and restore the
-snapshot, because the model has no editable node for that argument.
+leaf and puts the caret inside it, so text is edited as a string.
+`\operatorname` does the same with the operator's name: `Function` names are
+text-editable like a `Text` leaf, and editing preserves the node's `Limits`.
+`\pmod` inserts its argument as an empty row, and the caret enters that row;
+its source still canonicalizes to the `\quad \text{(mod}\,…)` expansion
+because the writer stores semantics, not the `\pmod` spelling.
 
 ### Rows the editor creates
 
@@ -249,6 +253,13 @@ host depends on:
 - `backspace_and_delete_remove_adjacent_leaves` — both deletion directions;
 - `a_fraction_command_puts_the_caret_in_the_numerator` — command templates,
   cross-model copy and the empty-slot caret;
+- `an_empty_text_command_puts_the_caret_inside`,
+  `an_empty_operatorname_puts_the_caret_in_the_name` and
+  `an_empty_pmod_puts_the_caret_in_its_argument` — templates insert the empty
+  container the caret can enter; the pmod case also pins that glue stays in the
+  row's child list, so a geometry index matches the model index after a space;
+- `editing_a_named_operator_rewrites_its_name` — a `Function` name is edited as
+  text without losing its `Limits`;
 - `a_script_shortcut_wraps_the_previous_symbol` — script construction;
 - `a_selection_is_replaced_in_one_undo_step` — selection deletion and history;
 - `a_cut_selection_round_trips_through_the_clipboard` — select-all, selection
@@ -427,9 +438,9 @@ another key. This is a manual check, not a golden-image gate.
 ## Not built yet
 
 - Command arguments beyond the template list; a full command palette and
-  argument placeholders. Keystroke entry does not cover name arguments
-  (`\operatorname`, `\begin`, `\hspace`, `\genfrac`, `\substack`, `\pmod`)
-  or `\operatorname*`'s star.
+  argument placeholders. Keystroke entry does not cover environment names
+  (`\begin`), lengths (`\hspace`), delimiter lists (`\genfrac`), `\substack`
+  rows, or `\operatorname*`'s star.
 - Incremental layout; the editor relayouts the whole formula per edit, which
   the M5 budget measurements justify at this scale.
 - Browser hosts and the visual golden-image gate. The native window is the

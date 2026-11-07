@@ -636,6 +636,17 @@ fn decorated_operator_commands_enter_through_the_command_buffer() {
     assert_eq!(arrow.source(), "\\underrightarrow {x}");
 }
 
+fn find_function(model: &Model, id: NodeId) -> Option<NodeId> {
+    if matches!(model.kind(id), NodeKind::Function { .. }) {
+        return Some(id);
+    }
+    model
+        .kind(id)
+        .children()
+        .into_iter()
+        .find_map(|child| find_function(model, child.id))
+}
+
 fn find_text(model: &Model, id: NodeId) -> Option<NodeId> {
     if matches!(model.kind(id), NodeKind::Text(_)) {
         return Some(id);
@@ -733,4 +744,46 @@ fn an_empty_text_command_puts_the_caret_inside() {
     assert_eq!(editor.source(), "\\text{}");
     press(&mut editor, Key::Character('x'));
     assert_eq!(editor.source(), "\\text{x}");
+}
+
+#[test]
+fn an_empty_operatorname_puts_the_caret_in_the_name() {
+    let mut editor = editor("");
+    press_command(&mut editor, "operatorname");
+    press(&mut editor, Key::Character(' '));
+    assert_eq!(editor.source(), "\\operatorname{}");
+    press(&mut editor, Key::Character('r'));
+    assert_eq!(editor.source(), "\\operatorname{r}");
+}
+
+#[test]
+fn editing_a_named_operator_rewrites_its_name() {
+    let mut editor = editor("\\operatorname{rank}");
+    let function = find_function(editor.model(), editor.model().root()).expect("a function");
+    let rect = editor
+        .geometry()
+        .rect_of(function)
+        .expect("the name has a box");
+    assert!(editor.click(
+        Point {
+            x: rect.right() - 2.0,
+            y: rect.y + 2.0
+        },
+        false
+    ));
+    press(&mut editor, Key::Character('s'));
+    assert_eq!(editor.source(), "\\operatorname{ranks}");
+}
+
+#[test]
+fn an_empty_pmod_puts_the_caret_in_its_argument() {
+    let mut editor = editor("");
+    press_command(&mut editor, "pmod");
+    press(&mut editor, Key::Character(' '));
+    let inserted = editor.source();
+    assert!(inserted.contains("{}"), "{inserted}");
+    press(&mut editor, Key::Character('n'));
+    let edited = editor.source();
+    assert!(edited.contains("{n}"), "{edited}");
+    assert!(!edited.contains("{}"), "{edited}");
 }

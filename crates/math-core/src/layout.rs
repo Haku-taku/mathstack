@@ -364,10 +364,11 @@ fn layout_kind(
             layout_accent(cx, *base, *symbol, span, size, style, diagnostics)
         }
         NodeKind::Text(text) => layout_text(cx, text, span, size, style, diagnostics, true),
-        NodeKind::Composition(text)
-        | NodeKind::Error(text)
-        | NodeKind::Function { name: text, .. } => {
+        NodeKind::Composition(text) | NodeKind::Error(text) => {
             layout_text(cx, text, span, size, style, diagnostics, false)
+        }
+        NodeKind::Function { name, .. } => {
+            layout_text(cx, name, span, size, style, diagnostics, true)
         }
         NodeKind::Space(kind) => layout_space(cx, *kind, size, style),
         NodeKind::Hspace(length) => layout_hspace(cx, *length, size, style),
@@ -714,8 +715,12 @@ fn layout_row_with(
     let mut previous: Option<AtomClass> = None;
     for id in nodes {
         if cx.model.kind(*id).is_space() {
+            // Glue stays in the child list so geometry indices match the model
+            // and a caret can land on either side of it.
             let child = layout_node(cx, *id, size, style, diagnostics);
-            x += child.width;
+            let width = child.width;
+            out.push_child(child, x, 0.0, Slot::Body);
+            x += width;
             continue;
         }
         if let Some(left) = previous {
