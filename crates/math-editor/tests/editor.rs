@@ -724,3 +724,13 @@ fn shift_arrows_select_and_replace_inside_text() {
     press(&mut editor, Key::Character('X'));
     assert_eq!(editor.source(), "\\text{aXcd}");
 }
+
+#[test]
+fn an_empty_text_command_puts_the_caret_inside() {
+    let mut editor = editor("");
+    press_command(&mut editor, "text");
+    press(&mut editor, Key::Character(' '));
+    assert_eq!(editor.source(), "\\text{}");
+    press(&mut editor, Key::Character('x'));
+    assert_eq!(editor.source(), "\\text{x}");
+}

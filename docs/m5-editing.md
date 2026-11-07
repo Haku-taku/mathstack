@@ -61,7 +61,9 @@ not need a span; the synthetic origin is the marker.
 ## Text leaves
 
 A `Text(String)` stays one model leaf; the editor edits inside it by byte
-offset instead of splitting it into character nodes. Layout records the
+offset instead of splitting it into character nodes. `	ext` is the first
+name argument with a template: the editor inserts an empty leaf and puts the
+caret inside it, so text mode is reachable without typing a source snippet. Layout records the
 cluster boundaries the shaper returns, so the geometry index offers carets at
 `Text` offsets and the selection highlights the substring between them. A
 ligature is one cluster and cannot be split; a combining mark shares its

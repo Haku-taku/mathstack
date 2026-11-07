@@ -70,8 +70,9 @@ arguments, an optional bracket plus a math argument, a name/text argument, an
 environment name, a length, a relation symbol, or a special form the generic
 template cannot express. The editor uses that table instead of keeping its own
 command list; `command_template` derives the empty-argument snippet only for
-shapes whose empty form is meaningful. Font and name arguments deliberately
-have no template until the model can hold them.
+shapes whose empty form is meaningful. Font arguments and `\text` have a
+template because their containers are editable; the remaining name arguments
+have none until their model can hold one.
 
 Commands whose next token is a delimiter consume the key that ends the
 buffer instead of parsing a bare command:
@@ -104,10 +105,11 @@ reports it, rather than restoring the snapshot and losing the keystrokes.
 Whitespace between a delimiter command and its fence is ignored, as in LaTeX.
 A `\right` or `\middle` without an enclosing `\left` removes the buffer and
 reports it. Font commands such as `\mathbb` insert a `Variant` container with
-an empty body and put the caret inside it. Commands whose argument is text or a
-name — `\text`, `\operatorname`, `\begin`, `\hspace`, `\genfrac`, `\substack`
-and `\pmod` — still reject keystroke entry and restore the snapshot, because
-the model has no editable node for that argument.
+an empty body and put the caret inside it. `\text` inserts an empty `Text`
+leaf and puts the caret inside it, so text is edited as a string. Commands
+whose argument is a name — `\operatorname`, `\begin`, `\hspace`, `\genfrac`,
+`\substack` and `\pmod` — still reject keystroke entry and restore the
+snapshot, because the model has no editable node for that argument.
 
 ### Rows the editor creates
 
@@ -425,9 +427,9 @@ another key. This is a manual check, not a golden-image gate.
 ## Not built yet
 
 - Command arguments beyond the template list; a full command palette and
-  argument placeholders. Keystroke entry does not cover name or text arguments
-  (`\text`, `\operatorname`, `\begin`, `\hspace`, `\genfrac`, `\substack`,
-  `\pmod`) or `\operatorname*`'s star.
+  argument placeholders. Keystroke entry does not cover name arguments
+  (`\operatorname`, `\begin`, `\hspace`, `\genfrac`, `\substack`, `\pmod`)
+  or `\operatorname*`'s star.
 - Incremental layout; the editor relayouts the whole formula per edit, which
   the M5 budget measurements justify at this scale.
 - Browser hosts and the visual golden-image gate. The native window is the

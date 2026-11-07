@@ -1675,6 +1675,14 @@ impl Editor {
                 self.anchor = None;
                 return true;
             }
+            if let NodeKind::Text(text) = self.model.kind(*node)
+                && text.is_empty()
+                && let Some(path) = self.boundary_path(*node, Slot::Body, 0)
+            {
+                self.caret = path;
+                self.anchor = None;
+                return true;
+            }
             if let Some((node, slot, slot_index)) = first_empty_slot(&self.model, *node) {
                 self.caret = self
                     .boundary_path(node, slot, slot_index)

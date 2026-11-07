@@ -93,6 +93,7 @@ pub fn delimiter_symbol(name: &str) -> Option<char> {
 pub fn command_template(name: &str) -> Option<String> {
     match command_shape(name) {
         CommandShape::TwoMathArguments => Some(format!("\\{name}{{}}{{}}")),
+        CommandShape::NameArgument if name == "text" => Some("\\text{}".to_owned()),
         CommandShape::MathArgument
         | CommandShape::VariantArgument
         | CommandShape::OptionalMathArgument
