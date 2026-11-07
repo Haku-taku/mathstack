@@ -151,13 +151,23 @@ the slot will need. `Geometry::empty_slots` lists those cells and
 `Editor::placeholders` returns them as rectangles; the host only paints them.
 A static `layout` still measures an empty fraction as zero.
 
+Each empty slot offers one caret, in the middle of its reserved cell. It is a
+place to stand, not a gap with an edge on each side, so a press anywhere in the
+cell lands on that one caret and typing fills the slot.
+
 An empty optional slot — a superscript, subscript, radical degree, or an
 `\overset`/arrow annotation — is removed as a unit: Backspace or Delete drops
 the slot and leaves the base, with the caret just after it. A required slot
-cannot lose its row, so Backspace at an empty numerator moves the caret to the
-slot's start and Delete moves it to its end; a further press leaves the
-structure. This stops a deletion at a slot boundary from walking into the
+cannot lose its row, so Backspace at the empty numerator of `\frac{}{x}` moves
+the caret to the slot's start and Delete moves it to its end; a further press
+leaves the structure. This stops a deletion at a slot boundary from walking into the
 base or the other required child.
+
+A command whose every slot holds an empty row has nothing inside for Backspace
+to take, so the press removes the command itself and the caret lands where it
+stood. `\frac{}{}` and `\sqrt[]{}` go in one press; `\sqrt[3]{}` keeps its
+filled degree and stays. A command with any content keeps the rule above: the
+slot is left, the command is not.
 
 Table rows and cells are structural lists: text deletion clears the content
 inside a cell or row but never removes the cell itself, so a selection across
@@ -331,6 +341,16 @@ host depends on:
 - `empty_slots_leave_without_deleting_their_base` — Backspace/Delete in an
   empty script or degree keep the base, and a required empty slot moves the
   caret out without clearing its sibling;
+- `backspace_removes_a_command_whose_slots_are_all_empty` — `\frac{}{}` and
+  `\sqrt[]{}` go in one press, `\sqrt[3]{}` stays, and `\frac{}{x}` keeps
+  its fraction;
+- `an_empty_slot_offers_one_caret_at_its_center` — a placeholder is one stop,
+  in the middle of the cell it reserves;
+- `a_press_on_a_radicand_stays_in_the_radicand` — a radical's degree does not
+  take the radicand's presses, and the hit names a caret the layout draws;
+- `spans_describe_the_export_from_construction` and
+  `offsets_follow_the_export_and_accept_a_host_selection` — offsets from
+  `Editor::new` name the export the writer produces, not the parsed source;
 - `table_cells_survive_text_deletion` — clearing every cell and deleting a
   selection across a matrix row leave its cells and separators in place;
 - `copying_a_parsed_subtree_preserves_its_structure` — a broad formula
@@ -452,6 +472,33 @@ another key. This is a manual check, not a golden-image gate.
   synthetic and macro-expanded nodes fall back to the canonical export. The
   parser test pins the split between `Document::to_latex` and the canonical
   `to_latex`.
+- **An empty slot offered three carets.** The collector emitted a stop before
+  and after every child and then entered the child, so a placeholder showed
+  left, centre and right, two of them at the same x; a Backspace taken at the
+  right edge then named a boundary the emptied slot no longer offered and the
+  caret stalled. An empty row now contributes one centred stop and is not
+  entered; `hit_test` clamps a press to that index, and `repair_caret` settles
+  any caret an edit left on the removed edge. Pinned by
+  `an_empty_slot_offers_one_caret_at_its_center` and by the script-slot test.
+- **A press on a radicand entered the degree.** The slot fallback chose the
+  slot whose centre was nearest on y, and a radical's degree sits above its
+  body, so a press in the upper half of the radicand went to the degree. The
+  fallback now prefers the smallest slot box that contains the point, and the
+  radicand's press stays in its body. Pinned by
+  `a_press_on_a_radicand_stays_in_the_radicand`.
+- **A command with nothing in it could not be deleted.** Backspace left every
+  all-empty structure behind, so a template inserted by mistake had to be
+  cleared slot by slot and then abandoned. Backspace now removes a command
+  whose every slot holds an empty row; the distinction is content, not the
+  command's kind, so `\sqrt[3]{}` keeps its filled degree while
+  `\sqrt[]{}` goes. Pinned by
+  `backspace_removes_a_command_whose_slots_are_all_empty`.
+- **Offsets named the parsed source, not the export.** `Editor::new` skipped
+  the span normalization that every relayout runs, so the offset seam mixed
+  parser spans (which start at a group's brace) with the writer's export; a
+  stop could name an offset that is not a character boundary of `source()`.
+  Spans are now normalized at construction. Pinned by
+  `spans_describe_the_export_from_construction`.
 - **Selection deletion stopped inside a required slot.** Deleting a range
   walked backwards one leaf at a time, so a selected fraction was emptied and
   left behind; the replacement was then inserted before it. Range deletion now

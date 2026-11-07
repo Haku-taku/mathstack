@@ -1,6 +1,6 @@
 use math_core::{
-    CaretPath, Constants, GlyphId, InkBounds, MathFont, Model, NodeId, Point, ShapedGlyph,
-    ShapedRun, Slot, Step, Style, TextShaper, TextStyle, layout_with_geometry,
+    CaretPath, Constants, GlyphId, InkBounds, MathFont, Model, NodeId, NodeKind, Point,
+    ShapedGlyph, ShapedRun, Slot, Step, Style, TextShaper, TextStyle, layout_with_geometry,
     layout_with_shaper_and_geometry,
 };
 
@@ -384,4 +384,93 @@ fn a_ligature_cannot_be_split_by_a_caret() {
         .filter_map(|(path, _)| path.steps.last().map(|step| step.index))
         .collect();
     assert_eq!(offsets, vec![0, 3], "the ligature is one cluster");
+}
+
+/// An empty slot is one place to stand, in the middle of the space it reserves.
+#[test]
+fn an_empty_slot_offers_one_caret_at_its_center() {
+    let (model, root) = Model::build(|m| {
+        let numerator = m.row(Vec::new());
+        let denominator = m.row(Vec::new());
+        let fraction = m.fraction(numerator, denominator, true);
+        m.row(vec![fraction])
+    });
+    let NodeKind::Row(children) = model.kind(root) else {
+        panic!("the root is a row")
+    };
+    let fraction = children[0];
+    let (numerator, denominator) = match model.kind(fraction) {
+        NodeKind::Fraction {
+            numerator,
+            denominator,
+            ..
+        } => (*numerator, *denominator),
+        other => panic!("{other:?}"),
+    };
+    let (_, geometry, _) = layout_with_geometry(&TestFont, &model, root, 10.0, Style::TEXT);
+
+    for (slot, child) in [
+        (Slot::Numerator, numerator),
+        (Slot::Denominator, denominator),
+    ] {
+        let stops: Vec<_> = geometry
+            .carets()
+            .filter(|(path, _)| {
+                path.steps
+                    .last()
+                    .is_some_and(|step| step.node == fraction && step.slot == slot)
+            })
+            .map(|(_, rect)| *rect)
+            .collect();
+        assert_eq!(
+            stops.len(),
+            1,
+            "{slot:?} is one caret position, not a gap with an edge on each side"
+        );
+        let placeholder = geometry.rect_of(child).expect("the empty row is laid out");
+        assert_eq!(
+            stops[0].x,
+            placeholder.center_x(),
+            "the caret sits in the middle of the placeholder"
+        );
+    }
+}
+
+/// A radical's degree and its body stand side by side, so a press on the radicand belongs
+/// to the body rather than to the nearer slot centre.
+#[test]
+fn a_press_on_a_radicand_stays_in_the_radicand() {
+    let (model, root) = Model::build(|m| {
+        let x = m.symbol('x');
+        let body = m.row(vec![x]);
+        let three = m.symbol('3');
+        let degree = m.row(vec![three]);
+        let radical = m.radical(body, Some(degree));
+        m.row(vec![radical])
+    });
+    let NodeKind::Row(children) = model.kind(root) else {
+        panic!("the root is a row")
+    };
+    let body = match model.kind(children[0]) {
+        NodeKind::Radical { body, .. } => *body,
+        other => panic!("{other:?}"),
+    };
+    let (_, geometry, _) = layout_with_geometry(&TestFont, &model, root, 10.0, Style::TEXT);
+    let radicand = geometry.rect_of(body).expect("the radicand is laid out");
+    // Near the top of the radicand, where the degree's centre is closer than the body's.
+    let point = Point {
+        x: radicand.center_x(),
+        y: radicand.y + 0.1 * radicand.height,
+    };
+    let path = geometry
+        .hit_test(point)
+        .expect("a press inside the formula hits a caret");
+    assert!(
+        !path.steps.iter().any(|step| step.slot == Slot::Degree),
+        "a press on the radicand entered the degree: {path:?}"
+    );
+    assert!(
+        geometry.carets().any(|(stop, _)| stop == &path),
+        "the hit names a caret the layout draws: {path:?}"
+    );
 }

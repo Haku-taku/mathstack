@@ -56,17 +56,19 @@ The first step names the root. Each following step selects a child of the
 previous step's node; `index` counts the children of that slot that carry a
 node (decorations without an id, such as `\left…\right` fences, do not take a
 position). The last step is the caret itself: it is the boundary before child
-`index`, or after the final child when `index == len`. Because a fraction's
-numerator and denominator are different slots, their carets differ even though
-both slots hold one row.
+`index`, or after the final child when `index == len`. An empty row is one
+place to stand rather than a gap with an edge on each side, so its boundary is
+its own index and a slot whose last child is empty has no stop after it.
+Because a fraction's numerator and denominator are different slots, their
+carets differ even though both slots hold one row.
 
 `Geometry::caret(path)` walks the steps, rejecting a step whose node is not the
 current container or whose index is out of range, then returns the boundary
-rectangle. The rectangle's x is the next child's left edge, or the previous
-child's right edge at the end of a slot. Its vertical extent is the union of
-the slot's child boxes; an empty slot has no ink to size the caret, so it gets
-a one-em minimum height around the slot's baseline, clamped to the container so
-the caret never leaves the formula.
+rectangle. The rectangle's x is the next child's left edge, the previous
+child's right edge at the end of a slot, or the middle of an empty child. Its
+vertical extent is the union of the slot's child boxes; an empty slot has no
+ink to size the caret, so it gets a one-em minimum height around the slot's
+baseline, clamped to the container so the caret never leaves the formula.
 
 Paths are plain data (ids and indices), so a host can serialize or cache them.
 `Geometry::carets()` yields every caret the layout offers in reading order,
@@ -84,7 +86,9 @@ from.
 coordinates. It records `NodeId → Rect`, keeps the tree for hit testing, and
 builds a linear sequence of stops and ink rectangles in reading order:
 
-- every slot contributes a stop before, between and after its children;
+- every slot contributes a stop before, between and after its children,
+  except that an empty row contributes one stop at its own index and is not
+  entered;
 - a child that has children is entered recursively (its own stops follow the
   step that selected it);
 - a leaf contributes an ink rectangle.

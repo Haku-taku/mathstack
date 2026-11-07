@@ -125,6 +125,15 @@ investigation, not of the plan. 7.2c added the line primitive and 7.2d replaced
 the adapter; the line primitive landed first so the adapter never had to drop a
 `Line` item.
 
+**Offsets are the export's, not the document's.** The editor's offset seam
+names `source()`, which is the writer's export; a document may hold a
+differently-spaced source (`\alpha\beta` exports as `\alpha \beta`). The
+first structural event splices the export over the formula's range, so the
+range grows by the writer's space and the caret is then placed by export
+offsets. `markdown_math`'s arrow test pins the boundary at `start + 7`; when
+spans were left as parsed, the editor reported the parsed source's `start + 6`
+and the caret landed a byte inside the export.
+
 **"The smallest boundary is inside `ui-math`" held.** No caller changed. The
 only UI-wide additions were the line primitive and its paint paths, which the
 formula contract needed regardless of which layout engine produced the items.

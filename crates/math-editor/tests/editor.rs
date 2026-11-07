@@ -1,6 +1,6 @@
 use math_core::{
     Constants, GlyphId, InkBounds, MathFont, Model, NodeId, NodeKind, Origin, Point, ShapedRun,
-    Style, TextShaper, TextStyle,
+    Slot, Style, TextShaper, TextStyle,
 };
 use math_editor::{Editor, Key};
 use math_syntax::{parse, to_latex};
@@ -549,13 +549,10 @@ fn empty_slots_leave_without_deleting_their_base() {
 
     // A required slot keeps its empty row; Backspace leaves it without
     // touching the fraction's other child.
-    let mut fraction = editor("");
-    press_command(&mut fraction, "frac");
-    press(&mut fraction, Key::Character(' '));
+    let mut fraction = editor("\\frac{}{x}");
+    assert!(fraction.click(Point { x: 3.0, y: 2.0 }, false));
     assert!(press(&mut fraction, Key::Backspace));
-    assert_eq!(fraction.source(), "\\frac {}{}");
-    assert!(!press(&mut fraction, Key::Backspace));
-    assert_eq!(fraction.source(), "\\frac {}{}");
+    assert_eq!(fraction.source(), "\\frac {}{x}");
 
     // An empty degree is optional too; its content deletes first.
     let mut radical = editor("\\sqrt[3]{x}");
@@ -566,6 +563,32 @@ fn empty_slots_leave_without_deleting_their_base() {
     assert_eq!(radical.source(), "\\sqrt []{x}");
     assert!(press(&mut radical, Key::Backspace));
     assert_eq!(radical.source(), "\\sqrt {x}");
+}
+
+#[test]
+fn backspace_removes_a_command_whose_slots_are_all_empty() {
+    // Nothing inside the fraction can be taken: the command itself is what goes.
+    let mut fraction = editor("\\frac{}{}");
+    assert!(fraction.click(Point { x: 3.0, y: 2.0 }, false));
+    assert!(press(&mut fraction, Key::Backspace));
+    assert_eq!(fraction.source(), "");
+
+    // The same command between two letters leaves them adjacent.
+    let mut between = editor("a\\frac{}{}b");
+    assert!(between.click(Point { x: 14.0, y: 2.0 }, false));
+    assert!(press(&mut between, Key::Backspace));
+    assert_eq!(between.source(), "ab");
+
+    // A radical with an empty degree is empty; one with a filled degree is not.
+    let mut radical = editor("\\sqrt[]{}");
+    assert!(radical.click(Point { x: 10.0, y: 10.0 }, false));
+    assert!(press(&mut radical, Key::Backspace));
+    assert_eq!(radical.source(), "");
+
+    let mut filled = editor("\\sqrt[3]{}");
+    assert!(filled.click(Point { x: 10.0, y: 10.0 }, false));
+    assert!(press(&mut filled, Key::Backspace));
+    assert_eq!(filled.source(), "\\sqrt [3]{}");
 }
 
 #[test]
@@ -844,30 +867,55 @@ fn an_empty_pmod_puts_the_caret_in_its_argument() {
 }
 
 #[test]
+fn spans_describe_the_export_from_construction() {
+    let editor = editor("\\frac{1}{2}");
+    let export = editor.source();
+    assert_eq!(export, "\\frac {1}{2}");
+    let denominator = editor
+        .geometry()
+        .carets()
+        .find(|(path, _)| {
+            path.steps
+                .last()
+                .is_some_and(|step| step.slot == Slot::Denominator)
+        })
+        .map(|(path, _)| path.clone())
+        .expect("a stop in the denominator");
+    assert_eq!(
+        editor.offset_of(&denominator),
+        Some(10),
+        "the denominator starts where the export puts it"
+    );
+}
+
+#[test]
 fn offsets_follow_the_export_and_accept_a_host_selection() {
     let source = "a+\\frac{b}{c}";
     let mut editor = editor(source);
+    // Offsets name the export the editor holds, not the source it was built from.
+    let export = editor.source();
+    assert_eq!(export, "a+\\frac {b}{c}");
     let mut previous = 0;
     for (path, _) in editor.geometry().carets() {
         let offset = editor.offset_of(path).expect("a stop maps into the source");
         assert!(offset >= previous, "{offset} after {previous}");
-        assert!(offset <= source.len(), "{offset} past the source");
+        assert!(offset <= export.len(), "{offset} past the source");
         previous = offset;
     }
 
-    // A host drags from its own buffer into the formula and back out.
-    assert!(editor.set_selection_offsets(0, 7));
+    // A host drags from its own buffer into the numerator and back out.
+    assert!(editor.set_selection_offsets(0, 9));
     assert_eq!(editor.anchor_offset(), Some(0));
-    assert_eq!(editor.caret_offset(), Some(7));
-    assert_eq!(editor.selection_offsets(), Some((0, 7)));
+    assert_eq!(editor.caret_offset(), Some(9));
+    assert_eq!(editor.selection_offsets(), Some((0, 9)));
     assert!(!editor.selection().is_empty());
 
     let (anchor, caret) = editor.selection_offsets().expect("still selected");
     assert!(!editor.set_selection_offsets(anchor, caret));
-    assert!(editor.set_selection_offsets(7, 7));
+    assert!(editor.set_selection_offsets(9, 9));
     assert_eq!(
         editor.selection_offsets(),
-        Some((7, 7)),
+        Some((9, 9)),
         "a collapsed selection names the caret twice"
     );
     assert!(editor.selection().is_empty());

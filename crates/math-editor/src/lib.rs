@@ -114,7 +114,7 @@ impl Editor {
             .last()
             .map(|(path, _)| path.clone())
             .unwrap_or_default();
-        Editor {
+        let mut editor = Editor {
             model: document.model,
             spellings: document.spellings,
             layout,
@@ -138,7 +138,11 @@ impl Editor {
             command_before: None,
             command_ime_start: None,
             message: None,
-        }
+        };
+        // The parser's spans name the source the formula was read from; the export
+        // normalizes it. Offsets into the export must hold from the first frame.
+        editor.normalize_spans();
+        editor
     }
 
     pub fn model(&self) -> &Model {
@@ -446,11 +450,51 @@ impl Editor {
                     .unwrap_or_default()
             });
         }
+        if self.caret_index().is_none()
+            && let Some(settled) = self.settle_boundary(&self.caret)
+        {
+            self.caret = settled;
+        }
         if let Some(anchor) = &self.anchor
             && self.geometry.caret(anchor).is_none()
         {
             self.anchor = None;
         }
+    }
+
+    /// The boundary the geometry draws for a caret an edit left behind.
+    ///
+    /// A slot is not entered through an empty row, so a caret inside one belongs at that
+    /// row's place in its parent; and a slot whose last child is an empty row has no stop
+    /// past it.
+    fn settle_boundary(&self, path: &CaretPath) -> Option<CaretPath> {
+        let mut steps = path.steps.clone();
+        let mut last = *steps.last()?;
+        let mut moved = false;
+        if self.model.try_kind(last.node).is_some_and(is_empty_row) {
+            steps = self.path_to(last.node)?;
+            last = *steps.last()?;
+            moved = true;
+        }
+        if matches!(
+            self.model.try_kind(last.node),
+            Some(NodeKind::Text(_) | NodeKind::Composition(_))
+        ) {
+            // Stops in a text leaf number bytes inside it, not children of a slot.
+            return None;
+        }
+        let children = self.slot_children(last.node, last.slot);
+        let limit = match children.last() {
+            Some(child) if is_empty_row(self.model.kind(*child)) => {
+                children.len().saturating_sub(1)
+            }
+            _ => children.len(),
+        };
+        if last.index <= limit {
+            return moved.then(|| CaretPath::new(steps));
+        }
+        steps.last_mut()?.index = limit;
+        Some(CaretPath::new(steps))
     }
 
     /// Moves the caret to the position nearest `point`; `extend` keeps the
@@ -1962,6 +2006,12 @@ impl Editor {
     fn insertion_row(&mut self) -> Option<(NodeId, usize)> {
         let step = *self.caret.steps.last()?;
         if matches!(self.model.kind(step.node), NodeKind::Row(_)) && step.slot == Slot::Body {
+            // An empty row's one stop is the boundary before it; typing there fills the row.
+            if let Some(child) = self.slot_children(step.node, step.slot).get(step.index)
+                && is_empty_row(self.model.kind(*child))
+            {
+                return Some((*child, 0));
+            }
             return Some((step.node, step.index));
         }
         if matches!(self.model.kind(step.node), NodeKind::Table { .. }) && step.slot == Slot::Row {
@@ -2094,7 +2144,60 @@ impl Editor {
         Some((self.stop_index(&start)?, self.stop_index(&end)?))
     }
 
+    /// Whether Backspace over `id` should remove the whole command.
+    ///
+    /// A command whose every slot holds an empty row has nothing inside for Backspace to
+    /// take — the caret can only leave it — so the command itself is what goes. The degree
+    /// of `\sqrt[3]{}` is filled and the command stays; an empty `\sqrt[]{}` has no content
+    /// at all and is removed.
+    fn is_empty_command(&self, id: NodeId) -> bool {
+        let kind = self.model.kind(id);
+        let children = kind.children();
+        if children.is_empty() || !children.iter().any(|child| !kind.slot_is_list(child.slot)) {
+            return false;
+        }
+        children
+            .iter()
+            .all(|child| is_empty_row(self.model.kind(child.id)))
+    }
+
+    /// The empty command Backspace deletes here: the one the caret stands in, else the one
+    /// that ends exactly at the caret.
+    fn empty_command_before(&self) -> Option<NodeId> {
+        for step in self.caret.steps.iter().rev() {
+            if self.is_empty_command(step.node) {
+                return Some(step.node);
+            }
+        }
+        let last = self.caret.steps.last()?;
+        if last.index == 0 {
+            return None;
+        }
+        let previous = self
+            .slot_children(last.node, last.slot)
+            .get(last.index - 1)
+            .copied()?;
+        self.is_empty_command(previous).then_some(previous)
+    }
+
+    fn delete_empty_command(&mut self, id: NodeId, font: &dyn MathFont) -> bool {
+        let Some(caret) = self.caret_before_node(id) else {
+            return false;
+        };
+        if self.remove_node(id).is_err() {
+            return false;
+        }
+        self.caret = caret;
+        self.anchor = None;
+        self.collapse_redundant_rows();
+        self.relayout(font);
+        true
+    }
+
     fn delete_before_raw(&mut self, font: &dyn MathFont) -> bool {
+        if let Some(command) = self.empty_command_before() {
+            return self.delete_empty_command(command, font);
+        }
         let mut guard = self.geometry.carets().count() + 2;
         while guard > 0 {
             let Some(position) = self.stop_index(&self.caret) else {

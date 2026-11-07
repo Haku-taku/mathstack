@@ -121,6 +121,7 @@ struct GChild {
     id: Option<NodeId>,
     rect: Rect,
     node: Option<GNode>,
+    empty: bool,
 }
 
 #[derive(Clone)]
@@ -332,6 +333,11 @@ impl Geometry {
                 break;
             }
         }
+        // An empty child offers one stop, at its own index; the edge past it was
+        // not emitted, so a path naming it would resolve to no stop at all.
+        if index == children.len() && children.last().is_some_and(|child| child.empty) {
+            index = children.len() - 1;
+        }
         steps.push(Step {
             node: id,
             slot,
@@ -352,14 +358,25 @@ impl Geometry {
                         .map(|child| (position, child))
                 })
             });
-        if let Some((position, child)) = inside
-            && let Some(child_node) = &child.node
-            && (!child_node.slots.is_empty() || child_node.text.is_some())
-        {
-            if let Some(last) = steps.last_mut() {
+        if let Some((position, child)) = inside {
+            let structure = child
+                .node
+                .as_ref()
+                .is_some_and(|node| !node.slots.is_empty() || node.text.is_some());
+            // An empty child is not entered: its one stop is the boundary itself.
+            if !child.empty
+                && structure
+                && let Some(child_node) = &child.node
+            {
+                if let Some(last) = steps.last_mut() {
+                    last.index = position;
+                }
+                self.hit(child_node, point, steps);
+            } else if child.empty
+                && let Some(last) = steps.last_mut()
+            {
                 last.index = position;
             }
-            self.hit(child_node, point, steps);
         }
         true
     }
@@ -378,10 +395,16 @@ fn boundary(node: &GNode, slot: Slot, index: usize, em: f32, bounds: Rect) -> Ca
         })
         .unwrap_or_default();
     let x = match children.get(index) {
+        // An empty child is one place to stand: its own middle, not an edge of a gap.
+        Some(child) if child.empty => child.rect.center_x(),
         Some(child) => child.rect.x,
-        None => children
-            .last()
-            .map_or(node.rect.x, |child| child.rect.right()),
+        None => children.last().map_or(node.rect.center_x(), |child| {
+            if child.empty {
+                child.rect.center_x()
+            } else {
+                child.rect.right()
+            }
+        }),
     };
     let mut top = f32::INFINITY;
     let mut bottom = f32::NEG_INFINITY;
@@ -443,8 +466,20 @@ impl Collector {
             for child in slot.children.iter().filter(|child| child.id.is_none()) {
                 self.entries.push(Entry::Ink(child.rect));
             }
-            self.stop(id, slot.slot, 0, node, prefix, bounds);
+            if ids.is_empty() {
+                // A slot holding nothing still needs a place to start typing.
+                self.stop(id, slot.slot, 0, node, prefix, bounds);
+                continue;
+            }
+            // An empty child is one caret position, centred in the space reserved for it.
+            // Emitting both of its edges around an empty row put three stops inside one
+            // placeholder, two of them at the same x.
             for (index, child) in ids.iter().enumerate() {
+                if child.empty {
+                    self.stop(id, slot.slot, index, node, prefix, bounds);
+                    continue;
+                }
+                self.stop(id, slot.slot, index, node, prefix, bounds);
                 if let Some(child_node) = &child.node
                     && (!child_node.slots.is_empty() || child_node.text.is_some())
                 {
@@ -458,7 +493,9 @@ impl Collector {
                 } else {
                     self.entries.push(Entry::Ink(child.rect));
                 }
-                self.stop(id, slot.slot, index + 1, node, prefix, bounds);
+            }
+            if ids.last().is_some_and(|child| !child.empty) {
+                self.stop(id, slot.slot, ids.len(), node, prefix, bounds);
             }
         }
     }
@@ -521,9 +558,9 @@ impl Collector {
 /// fallback picks the nearest slot centre.
 fn choose_slot(node: &GNode, point: Point) -> Option<Slot> {
     let has = |slot: Slot| node.slots.iter().any(|candidate| candidate.slot == slot);
-    if !has(Slot::Superscript) && !has(Slot::Subscript) && !has(Slot::Numerator) && !has(Slot::Over)
-    {
-        return node.slots.first().map(|slot| slot.slot);
+    // One slot is the whole node: no geometry can pick another.
+    if let [only] = node.slots.as_slice() {
+        return Some(only.slot);
     }
     let base = slot_rect(node, Slot::Base);
     if has(Slot::Superscript) || has(Slot::Subscript) {
@@ -554,7 +591,27 @@ fn choose_slot(node: &GNode, point: Point) -> Option<Slot> {
             }
         }
     }
-    nearest_slot(node, point)
+    // A slot whose box holds the point wins: a radical's degree and its body stand side by
+    // side, so the nearest centre would put a click on the radicand into the degree.
+    containing_slot(node, point).or_else(|| nearest_slot(node, point))
+}
+
+/// The smallest slot box that contains `point`.
+fn containing_slot(node: &GNode, point: Point) -> Option<Slot> {
+    let mut best: Option<(f32, Slot)> = None;
+    for slot in &node.slots {
+        let Some(rect) = slot_rect(node, slot.slot) else {
+            continue;
+        };
+        if !rect.contains(point) {
+            continue;
+        }
+        let area = rect.width * rect.height;
+        if best.is_none_or(|(smallest, _)| area < smallest) {
+            best = Some((area, slot.slot));
+        }
+    }
+    best.map(|(_, slot)| slot)
 }
 
 fn slot_rect(node: &GNode, slot: Slot) -> Option<Rect> {
@@ -672,6 +729,7 @@ fn convert_placed(
         id: placed.child.id,
         rect,
         node,
+        empty: placed.child.empty_em.is_some(),
     }
 }
 
