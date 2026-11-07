@@ -33,6 +33,10 @@ pub struct GlyphItem {
     pub x: f32,
     pub baseline: f32,
     pub size: f32,
+    /// The host's face slot for this glyph, from the shaper that produced it; 0 is
+    /// the face the formula is laid out with. The painter draws the glyph in that
+    /// face, because a glyph id means nothing in a font that did not produce it.
+    pub face: u16,
     /// The color of the enclosing `\color`/`\textcolor`, if any.
     pub color: Option<Color>,
 }

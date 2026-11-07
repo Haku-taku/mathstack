@@ -1163,6 +1163,7 @@ impl TextShaper for WideShaper {
                 y: 0.5,
                 size: 2.0,
                 cluster: 0,
+                face: 1,
             }],
             width: 3.0,
             ascent: 1.0,
@@ -1186,6 +1187,10 @@ fn text_layout_uses_the_host_shaper() {
     };
     assert_eq!(glyph.glyph, GlyphId(9));
     assert_eq!((glyph.x, glyph.baseline, glyph.size), (10.0, 5.0, 20.0));
+    assert_eq!(
+        glyph.face, 1,
+        "the glyph names the face its shaper used, not the formula's"
+    );
     assert_eq!(diagnostics.len(), 1);
     assert!(diagnostics[0].message.contains("U+007A"));
 

@@ -101,8 +101,11 @@ by source anyway.
   offset seam: `Editor::offset_of`, `caret_at_offset`, `caret_offset`,
   `anchor_offset`, `selection_offsets`, `set_selection_offsets` and `offset_at`
   here, `MathEdit::{selection_offsets, select_offsets, offset_at, formula_at}` in
-  the engine. Inline formulas and the editable-container entries (7.7) are not
-  wired.
+  the engine. Inline formulas are not wired. The editable containers are: the
+  host installs a `TextShaper` on every editor (7.7), so `\text`, operator names
+  and `\mathbb` bodies are shaped by the document's own stack, and a shaper that
+  falls back to another font names that face per glyph (`ShapedGlyph::face`, then
+  `MathItem::Glyph::face`), which the pass paints through the face it resolved.
 - The editor cannot yet reach environments that take their own arguments
   (`array`, `matrix*`, `alignat`), and an environment name or `\hspace` length
   cannot be edited after insertion. `\pmod` exports as its expansion, so its
@@ -137,6 +140,20 @@ and the caret landed a byte inside the export.
 **"The smallest boundary is inside `ui-math`" held.** No caller changed. The
 only UI-wide additions were the line primitive and its paint paths, which the
 formula contract needed regardless of which layout engine produced the items.
+
+**A formula's text could only be drawn in the formula's face.** The host never
+installed a `TextShaper`, so `\text` was measured by `FontShaper`: one glyph per
+character from the math face, and a missing-glyph diagnostic for everything that
+face lacks. A gallery formula holding `\text{中文}` laid out at zero width with
+two "no glyph" marks, while the same source edited fine in mathstack's demo.
+The shaper now comes from the pass's font stack — the formula's face first, then
+the script's fallback faces, split per grapheme where no single face covers a
+run — and each glyph carries the slot of the face that produced it, because a
+glyph id means nothing in another font. Pinned by `ui-widgets`'
+`a_text_container_measures_in_the_documents_own_text_stack` (red at zero width
+and two diagnostics without the shaper) and
+`a_mark_and_its_base_are_one_caret_stop_inside_text` (red: a Right step did not
+cross the grapheme).
 
 **A declined arrow has to be a declined arrow.** The engine hands keys to the
 structure whenever the caret's byte is inside the formula's range, and takes any

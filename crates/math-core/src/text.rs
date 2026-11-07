@@ -27,6 +27,10 @@ pub struct ShapedGlyph {
     /// the offset of the first character, and the next cluster starts after
     /// the ligature.
     pub cluster: usize,
+    /// The host's face slot for this glyph; 0 is the face the formula is laid
+    /// out with. A shaper that fell back to another face names it here, because
+    /// a glyph id means nothing in a font that did not produce it.
+    pub face: u16,
 }
 
 /// A host-measured text run, in em units.
@@ -76,6 +80,7 @@ impl TextShaper for FontShaper<'_> {
                 y: 0.0,
                 size: 1.0,
                 cluster: offset,
+                face: 0,
             });
             run.width += self.font.advance(glyph);
         }

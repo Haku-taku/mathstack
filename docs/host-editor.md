@@ -215,6 +215,12 @@ degrades to the boundaries it reports. The editor edits the leaf's string by
 grapheme, so Backspace removes a whole `e` + combining acute or emoji ZWJ
 sequence even when the geometry exposes intermediate stops.
 
+A host that falls back to another font names that face per glyph: `ShapedGlyph::face`
+is the host's own slot number, 0 being the formula's face, and it travels to
+`GlyphItem::face` unchanged. A glyph id means nothing in a face that did not
+produce it, so a host that shapes `\text{中文}` with its CJK face must paint those
+glyphs with the same face; the engine never reinterprets the slot.
+
 ## Source spans
 
 The editor's source is its export. Every layout writes the model through

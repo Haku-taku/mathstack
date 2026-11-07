@@ -359,6 +359,7 @@ impl TextShaper for LigatureShaper {
                 y: 0.0,
                 size: 1.0,
                 cluster: 0,
+                face: 0,
             }],
             width: 3.0,
             ascent: 0.6,

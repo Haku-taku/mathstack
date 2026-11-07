@@ -598,6 +598,7 @@ fn layout_atom(
             x: 0.0,
             baseline: 0.0,
             size: em,
+            face: 0,
         })],
         empty_em: None,
         text: None,
@@ -652,6 +653,7 @@ fn layout_text(
             x: glyph.x * em,
             baseline: -glyph.y * em,
             size: glyph.size * em,
+            face: glyph.face,
         }));
     }
     for symbol in run.missing {
@@ -1160,6 +1162,7 @@ fn delimiter_box(
                 x: 0.0,
                 baseline: 0.0,
                 size: em,
+                face: 0,
             })],
             empty_em: None,
             text: None,
@@ -1294,6 +1297,7 @@ fn layout_accent(
         x: dx,
         baseline: -shift_up,
         size: em,
+        face: 0,
     }));
     out
 }
@@ -2037,6 +2041,7 @@ fn emit_stretched(
                     x,
                     baseline: top + ink.top * em,
                     size: em,
+                    face: 0,
                 }));
             }
         }
@@ -2050,6 +2055,7 @@ fn emit_stretched(
                         x,
                         baseline: bottom - offset * em + ink.bottom * em,
                         size: em,
+                        face: 0,
                     }));
                 }
             }
@@ -2094,6 +2100,7 @@ fn emit_stretched_horizontal(
             x,
             baseline,
             size: em,
+            face: 0,
         })),
         Stretched::Assembly { parts, .. } => {
             for (glyph, offset) in parts {
@@ -2103,6 +2110,7 @@ fn emit_stretched_horizontal(
                     x: x + offset * em,
                     baseline,
                     size: em,
+                    face: 0,
                 }));
             }
         }
