@@ -208,6 +208,109 @@ impl Editor {
         }
     }
 
+    /// Byte offset of one caret stop in `source()`.
+    ///
+    /// A text leaf maps inside its `\text{…}` body through the escapes the writer added, so a
+    /// host that drives the caret from the same buffer lands between the same characters.
+    /// Every other stop maps to the start of the child after it, or past the last child, which
+    /// makes the offsets monotonic in reading order. `None` when the path names a freed node.
+    pub fn offset_of(&self, path: &CaretPath) -> Option<usize> {
+        self.offset_in(path, &self.source())
+    }
+
+    fn offset_in(&self, path: &CaretPath, source: &str) -> Option<usize> {
+        let Some(last) = path.steps.last() else {
+            return Some(0);
+        };
+        if !self.model.is_alive(last.node) {
+            return None;
+        }
+        let span = self.model.span(last.node);
+        let kind = self.model.kind(last.node);
+        let NodeKind::Text(text) = kind else {
+            let children: Vec<NodeId> = kind
+                .children()
+                .into_iter()
+                .filter(|child| child.slot == last.slot)
+                .map(|child| child.id)
+                .collect();
+            return match children.get(last.index) {
+                Some(child) => Some(self.model.span(*child).start),
+                None => children
+                    .last()
+                    .map(|child| self.model.span(*child).end)
+                    .or(Some(span.start)),
+            };
+        };
+        let Some((base, body)) = text_body(source, span) else {
+            return Some(span.start);
+        };
+        Some(base + escaped_offset(body, text, last.index))
+    }
+
+    /// The caret's byte offset in `source()`.
+    pub fn caret_offset(&self) -> Option<usize> {
+        self.offset_of(&self.caret)
+    }
+
+    /// The anchor's byte offset in `source()`, when something is selected.
+    pub fn anchor_offset(&self) -> Option<usize> {
+        self.offset_of(self.anchor.as_ref()?)
+    }
+
+    /// The selection as `(anchor, caret)` byte offsets.
+    pub fn selection_offsets(&self) -> Option<(usize, usize)> {
+        Some((self.anchor_offset()?, self.caret_offset()?))
+    }
+
+    /// The caret stop nearest `offset` in `source()`, deepest when several share a byte.
+    ///
+    /// A formula's caret only lives on node boundaries, so a host offset inside a token snaps
+    /// to that token's boundary. Preferring the deepest stop lets a host caret inside a
+    /// fraction enter the fraction instead of stopping beside it.
+    pub fn caret_at_offset(&self, offset: usize) -> Option<CaretPath> {
+        let source = self.source();
+        let mut best: Option<(usize, usize, CaretPath)> = None;
+        for (path, _) in self.geometry.carets() {
+            let Some(stop) = self.offset_in(path, &source) else {
+                continue;
+            };
+            let distance = stop.abs_diff(offset);
+            let depth = path.steps.len();
+            let better = match &best {
+                None => true,
+                Some((closest, deepest, _)) => {
+                    distance < *closest || (distance == *closest && depth > *deepest)
+                }
+            };
+            if better {
+                best = Some((distance, depth, path.clone()));
+            }
+        }
+        best.map(|(_, _, path)| path)
+    }
+
+    /// Places the caret and selection from byte offsets of `source()`.
+    ///
+    /// This is how a host hands a selection that crosses the formula in from its own buffer.
+    /// Returns whether anything moved; a collapsed selection leaves no anchor.
+    pub fn set_selection_offsets(&mut self, anchor: usize, caret: usize) -> bool {
+        let Some(caret) = self.caret_at_offset(caret) else {
+            return false;
+        };
+        let anchor = self.caret_at_offset(anchor).filter(|path| *path != caret);
+        let changed = caret != self.caret || anchor != self.anchor;
+        self.caret = caret;
+        self.anchor = anchor;
+        changed
+    }
+
+    /// The byte offset in `source()` nearest `point`, in formula space.
+    pub fn offset_at(&self, point: Point) -> Option<usize> {
+        let path = self.geometry.hit_test(point)?;
+        self.offset_of(&path)
+    }
+
     /// A pending `\command` name, which the host may show.
     pub fn command(&self) -> Option<&str> {
         self.command.as_deref()
@@ -2579,4 +2682,57 @@ fn first_empty_slot(model: &Model, id: NodeId) -> Option<(NodeId, Slot, usize)> 
         }
     }
     None
+}
+
+/// A text leaf's exported body: where it starts in the source, and the escaped bytes it holds.
+///
+/// A text node is written either as `\text{…}` or as the spelling its document used, and both
+/// put the body between the first `{` and the last `}`. A node exported without braces (a
+/// `\pmod` piece, say) has no body to map into.
+fn text_body(source: &str, span: Span) -> Option<(usize, &str)> {
+    let token = source.get(span.start..span.end)?;
+    let open = token.find('{')?;
+    let close = token.rfind('}')?;
+    if close <= open {
+        return None;
+    }
+    Some((span.start + open + 1, &token[open + 1..close]))
+}
+
+/// Source bytes an escaped text body spends on the first `index` bytes of its decoded text.
+fn escaped_offset(body: &str, text: &str, index: usize) -> usize {
+    let mut text_at = 0;
+    let mut body_at = 0;
+    while text_at < index {
+        let Some(symbol) = text[text_at..].chars().next() else {
+            return body_at;
+        };
+        let Some(unit) = escaped_unit(&body[body_at..]) else {
+            return body_at;
+        };
+        text_at += symbol.len_utf8();
+        body_at += unit;
+    }
+    body_at
+}
+
+/// Source bytes one escaped character of a text body occupies: `\{` is two,
+/// `\textbackslash{}` sixteen, a plain character its own length.
+fn escaped_unit(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    if *bytes.first()? != b'\\' {
+        return Some(text.chars().next()?.len_utf8());
+    }
+    let mut at = 1;
+    if bytes.get(at).is_some_and(u8::is_ascii_alphabetic) {
+        while bytes.get(at).is_some_and(u8::is_ascii_alphabetic) {
+            at += 1;
+        }
+        if text[at..].starts_with("{}") {
+            at += 2;
+        }
+    } else {
+        at += text.get(at..)?.chars().next()?.len_utf8();
+    }
+    Some(at)
 }

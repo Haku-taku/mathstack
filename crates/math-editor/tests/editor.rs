@@ -842,3 +842,53 @@ fn an_empty_pmod_puts_the_caret_in_its_argument() {
     assert!(edited.contains("{n}"), "{edited}");
     assert!(!edited.contains("{}"), "{edited}");
 }
+
+#[test]
+fn offsets_follow_the_export_and_accept_a_host_selection() {
+    let source = "a+\\frac{b}{c}";
+    let mut editor = editor(source);
+    let mut previous = 0;
+    for (path, _) in editor.geometry().carets() {
+        let offset = editor.offset_of(path).expect("a stop maps into the source");
+        assert!(offset >= previous, "{offset} after {previous}");
+        assert!(offset <= source.len(), "{offset} past the source");
+        previous = offset;
+    }
+
+    // A host drags from its own buffer into the formula and back out.
+    assert!(editor.set_selection_offsets(0, 7));
+    assert_eq!(editor.anchor_offset(), Some(0));
+    assert_eq!(editor.caret_offset(), Some(7));
+    assert_eq!(editor.selection_offsets(), Some((0, 7)));
+    assert!(!editor.selection().is_empty());
+
+    let (anchor, caret) = editor.selection_offsets().expect("still selected");
+    assert!(!editor.set_selection_offsets(anchor, caret));
+    assert!(editor.set_selection_offsets(7, 7));
+    assert_eq!(editor.selection_offsets(), None);
+}
+
+#[test]
+fn an_offset_inside_an_escaped_text_body_lands_between_characters() {
+    let mut editor = editor("\\text{a\\{b}");
+    assert_eq!(editor.source(), "\\text{a\\{b}");
+    // The body is `a\{b`, so byte 9 of the source is between `{` and `b`.
+    assert!(editor.set_selection_offsets(9, 9));
+    assert_eq!(editor.caret_offset(), Some(9));
+    press(&mut editor, Key::Character('X'));
+    assert_eq!(editor.source(), "\\text{a\\{Xb}");
+}
+
+#[test]
+fn an_offset_at_an_empty_slot_types_into_it() {
+    let mut editor = editor("\\frac{}{x}");
+    let source = editor.source();
+    let close = source.find('}').expect("the numerator closes");
+    let path = editor
+        .caret_at_offset(close)
+        .expect("the empty numerator is a stop");
+    assert_eq!(editor.offset_of(&path), Some(close));
+    assert!(editor.set_selection_offsets(close, close));
+    press(&mut editor, Key::Character('y'));
+    assert_eq!(editor.source(), "\\frac {y}{x}");
+}
