@@ -865,7 +865,12 @@ fn offsets_follow_the_export_and_accept_a_host_selection() {
     let (anchor, caret) = editor.selection_offsets().expect("still selected");
     assert!(!editor.set_selection_offsets(anchor, caret));
     assert!(editor.set_selection_offsets(7, 7));
-    assert_eq!(editor.selection_offsets(), None);
+    assert_eq!(
+        editor.selection_offsets(),
+        Some((7, 7)),
+        "a collapsed selection names the caret twice"
+    );
+    assert!(editor.selection().is_empty());
 }
 
 #[test]

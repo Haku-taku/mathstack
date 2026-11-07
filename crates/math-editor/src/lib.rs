@@ -258,9 +258,11 @@ impl Editor {
         self.offset_of(self.anchor.as_ref()?)
     }
 
-    /// The selection as `(anchor, caret)` byte offsets.
+    /// The selection as `(anchor, caret)` byte offsets. A collapsed selection names the
+    /// caret twice, so a host can hand the pair back without checking.
     pub fn selection_offsets(&self) -> Option<(usize, usize)> {
-        Some((self.anchor_offset()?, self.caret_offset()?))
+        let caret = self.caret_offset()?;
+        Some((self.anchor_offset().unwrap_or(caret), caret))
     }
 
     /// The caret stop nearest `offset` in `source()`, deepest when several share a byte.
