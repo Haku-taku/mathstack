@@ -8,7 +8,8 @@ use crate::symbols;
 /// The tokens a command expects after its name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandShape {
-    /// No argument: a symbol command, large operator, function or spacing.
+    /// No argument: a symbol command, large operator, function, spacing, or a
+    /// no-argument construct such as `\mathstrut`.
     None,
     /// The next token is a delimiter (`\left`, `\right`, `\middle`, `\bigl`).
     Delimiter,
@@ -34,7 +35,7 @@ pub enum CommandShape {
     /// The next token is a relation symbol (`\not`).
     SymbolArgument,
     /// A command whose arguments the generic template cannot express
-    /// (`\genfrac`, `\substack`, `\pmod`).
+    /// (`\genfrac`, `\substack`, `\pmod`, `\colorbox`, `\mathchoice`).
     Special,
     Unknown,
 }
@@ -50,13 +51,14 @@ pub fn command_shape(name: &str) -> CommandShape {
         "xrightarrow" | "xleftarrow" => CommandShape::OptionalUnderArgument,
         "text" | "operatorname" | "operatornamewithlimits" => CommandShape::NameArgument,
         "hspace" => CommandShape::Length,
-        "genfrac" | "substack" | "pmod" | "color" | "textcolor" => CommandShape::Special,
+        "genfrac" | "substack" | "pmod" | "color" | "textcolor" | "colorbox" | "fcolorbox"
+        | "mathchoice" => CommandShape::Special,
         "not" => CommandShape::SymbolArgument,
         "mod" | "pod" => CommandShape::MathArgument,
         "left" | "right" | "middle" => CommandShape::Delimiter,
         "mathord" | "mathop" | "mathbin" | "mathrel" | "mathopen" | "mathclose" | "mathpunct"
         | "mathinner" | "underrightarrow" | "underleftarrow" => CommandShape::MathArgument,
-        "varliminf" | "varlimsup" | "varinjlim" | "varprojlim" => CommandShape::None,
+        "varliminf" | "varlimsup" | "varinjlim" | "varprojlim" | "mathstrut" => CommandShape::None,
         "overline" | "underline" | "phantom" | "hphantom" | "vphantom" | "cancel" | "bcancel"
         | "xcancel" | "boxed" | "overbrace" | "underbrace" => CommandShape::MathArgument,
         _ => {

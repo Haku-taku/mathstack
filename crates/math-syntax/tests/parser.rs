@@ -1446,6 +1446,10 @@ fn command_shapes_describe_what_the_parser_expects() {
     assert_eq!(command_shape("hspace"), CommandShape::Length);
     assert_eq!(command_shape("not"), CommandShape::SymbolArgument);
     assert_eq!(command_shape("genfrac"), CommandShape::Special);
+    assert_eq!(command_shape("mathstrut"), CommandShape::None);
+    assert_eq!(command_shape("mathchoice"), CommandShape::Special);
+    assert_eq!(command_shape("colorbox"), CommandShape::Special);
+    assert_eq!(command_shape("fcolorbox"), CommandShape::Special);
     assert_eq!(command_shape("nope"), CommandShape::Unknown);
 }
 
