@@ -30,9 +30,11 @@ impl Editor {
 
 `key` is the whole keyboard surface: characters, Backspace/Delete, arrows,
 Home/End and Escape, with Shift as the selection modifier. `key` and
-`insert_latex` return whether the display changed. The host asks the editor for
-`layout()`, `geometry()`, `selection()`, `caret_rect()` and `source()`; it never
-walks the box tree itself.
+`insert_latex` return whether the display changed; an arrow with nowhere to go —
+the first or last stop, the line above the topmost — returns `false`, and the
+host moves the caret out of the formula with that key. The host asks the editor
+for `layout()`, `geometry()`, `selection()`, `caret_rect()` and `source()`; it
+never walks the box tree itself.
 
 Structure is the document. Typing inserts nodes, Backspace removes a leaf (or
 clears a required slot with an empty row), and `source()` writes the model back
@@ -518,6 +520,20 @@ another key. This is a manual check, not a golden-image gate.
   removes every node whose stop interval lies inside the selection and only
   descends into a node the range cuts. It also relayouts after a
   selection-only Backspace, which previously left stale geometry.
+- **A step with nowhere to go was reported as a change.** `move_horizontal`
+  clamped its target index and returned `true` anyway, and `move_vertical`
+  returned `true` when the hit test was clamped back onto the caret's own line.
+  A host that hands declined keys to its document therefore never saw an arrow
+  at a formula's first or last stop: the caret could not leave the formula.
+  Both return `false` now when the path does not move.
+- **`set_selection_offsets` re-derived a caret the editor already had.** Several
+  stops export the same byte, so deriving a path from the offset could pick one
+  the user was not standing on, and a collapsed request derived an anchor too,
+  leaving two paths on one byte. A host that echoes the reported caret after
+  every key — a document with one caret does — undid each step before the next.
+  The caret keeps its path when its offset is unchanged, and a collapsed request
+  stores no anchor. Both rules are pinned by
+  `mirroring_the_reported_caret_does_not_undo_a_step`.
 
 ## Not built yet
 

@@ -584,6 +584,33 @@ fn an_emptied_script_leaves_no_wrapper_to_trap_the_caret() {
 }
 
 #[test]
+fn mirroring_the_reported_caret_does_not_undo_a_step() {
+    // The document hands the editor back the caret it reported after every key. Deriving a
+    // fresh path from that byte picked another stop on the same byte, so the caret froze.
+    let mut editor = editor("\\int_0^1 x^2");
+    press(&mut editor, Key::End);
+    let mut offsets = vec![editor.caret_offset().expect("a caret")];
+    loop {
+        let stepped = press(&mut editor, Key::Left);
+        let (anchor, caret) = editor.selection_offsets().expect("a caret");
+        assert!(
+            !editor.set_selection_offsets(anchor, caret),
+            "the host's echo moves nothing: {offsets:?}"
+        );
+        offsets.push(caret);
+        if !stepped {
+            break;
+        }
+        assert!(offsets.len() < 60, "the steps end: {offsets:?}");
+    }
+    assert_eq!(
+        *offsets.last().expect("offsets"),
+        0,
+        "the caret reached the first stop: {offsets:?}"
+    );
+}
+
+#[test]
 fn backspace_removes_a_command_whose_slots_are_all_empty() {
     // Nothing inside the fraction can be taken: the command itself is what goes.
     let mut fraction = editor("\\frac{}{}");

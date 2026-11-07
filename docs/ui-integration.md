@@ -138,6 +138,17 @@ and the caret landed a byte inside the export.
 only UI-wide additions were the line primitive and its paint paths, which the
 formula contract needed regardless of which layout engine produced the items.
 
+**A declined arrow has to be a declined arrow.** The engine hands keys to the
+structure whenever the caret's byte is inside the formula's range, and takes any
+`true` answer as "the structure used this key". An arrow step at the first or
+last stop returned `true` without moving, so the document never received it and
+the caret stayed trapped in the block; `set_selection_offsets` then re-derived
+the path from the echoed byte and could drop a step taken between two stops that
+export one byte. Both rules are now part of the host contract (see
+`host-editor.md`), and `markdown_math`'s
+`the_arrows_walk_the_caret_out_of_a_display_formula` walks the caret out of a
+display formula and back in with the arrows.
+
 ## How each claim was checked
 
 - File and line references were read from the working trees on 2026-11-07.

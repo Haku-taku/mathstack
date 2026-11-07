@@ -300,14 +300,29 @@ impl Editor {
     ///
     /// This is how a host hands a selection that crosses the formula in from its own buffer.
     /// Returns whether anything moved; a collapsed selection leaves no anchor.
+    ///
+    /// A caret already on the requested byte keeps its path: several stops export one byte,
+    /// and re-deriving would pick another of them, undoing the step the user just took.
     pub fn set_selection_offsets(&mut self, anchor: usize, caret: usize) -> bool {
-        let Some(caret) = self.caret_at_offset(caret) else {
-            return false;
+        let caret_path = if self.caret_offset() == Some(caret) {
+            self.caret.clone()
+        } else {
+            match self.caret_at_offset(caret) {
+                Some(path) => path,
+                None => return false,
+            }
         };
-        let anchor = self.caret_at_offset(anchor).filter(|path| *path != caret);
-        let changed = caret != self.caret || anchor != self.anchor;
-        self.caret = caret;
-        self.anchor = anchor;
+        // A collapsed request names the caret twice; an anchor derived from it would leave
+        // two paths on one byte, and the next arrow would collapse that empty selection.
+        let anchor_path = if anchor == caret {
+            None
+        } else {
+            self.caret_at_offset(anchor)
+                .filter(|path| *path != caret_path)
+        };
+        let changed = caret_path != self.caret || anchor_path != self.anchor;
+        self.caret = caret_path;
+        self.anchor = anchor_path;
         changed
     }
 
@@ -2443,6 +2458,11 @@ impl Editor {
         } else {
             (current + 1).min(count.saturating_sub(1))
         };
+        // The first and last stops have nowhere to step: the key belongs to the host,
+        // which moves the caret out of the formula.
+        if target == current {
+            return false;
+        }
         let Some(path) = self.stop_path(target) else {
             return false;
         };
@@ -2454,11 +2474,6 @@ impl Editor {
         let Some(rect) = self.caret_rect() else {
             return false;
         };
-        if !shift {
-            self.anchor = None;
-        } else if self.anchor.is_none() {
-            self.anchor = Some(self.caret.clone());
-        }
         let em = self.style.em(font, self.size);
         let y = match direction {
             -1 => rect.top - 0.25 * em,
@@ -2472,6 +2487,16 @@ impl Editor {
         let Some(path) = self.geometry.hit_test(point) else {
             return false;
         };
+        // A step clamped back onto the caret's own line found no line past the formula's
+        // edge; the host moves the caret out of it.
+        if path == self.caret {
+            return false;
+        }
+        if !shift {
+            self.anchor = None;
+        } else if self.anchor.is_none() {
+            self.anchor = Some(self.caret.clone());
+        }
         self.caret = path;
         true
     }
