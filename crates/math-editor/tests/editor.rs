@@ -818,6 +818,19 @@ fn typing_an_environment_name_opens_its_first_cell() {
 }
 
 #[test]
+fn hspace_takes_its_length_in_the_command_buffer() {
+    let mut editor = editor("");
+    press_command(&mut editor, "hspace");
+    press(&mut editor, Key::Character('{'));
+    for symbol in "1em".chars() {
+        press(&mut editor, Key::Character(symbol));
+    }
+    press(&mut editor, Key::Character('}'));
+    press(&mut editor, Key::Character('a'));
+    assert_eq!(editor.source(), "\\hspace {1em}a");
+}
+
+#[test]
 fn an_empty_pmod_puts_the_caret_in_its_argument() {
     let mut editor = editor("");
     press_command(&mut editor, "pmod");

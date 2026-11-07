@@ -73,20 +73,22 @@ command list; `command_template` derives the empty-argument snippet only for
 shapes whose empty form is meaningful. Font arguments, `\text`,
 `\operatorname`/`\operatornamewithlimits`, `\pmod`, `\genfrac` and
 `\substack` have a template because their arguments end in editable nodes or
-are consumed by the parser; `\hspace` has none because a length has no node
-the caret can enter. `\genfrac`'s six groups collapse into the same `Fraction`
+are consumed by the parser. `\genfrac`'s six groups collapse into the same `Fraction`
 node `\frac` produces, so the template leaves the caret in the numerator and
 the writer spells the result as a fraction. `\substack{}` parses to a table
 with no rows, so the editor adds the first row and cell before placing the
 caret; the environment spelling is copied, and export keeps `\substack`.
 
-`\begin` collects its environment name in the command buffer: `{` starts the
-name, letters and `*` extend it, and `}` parses `\begin{name}\end{name}` as
-one snippet. The parser decides which names exist and what shape each table
-has; an unsupported name restores the document and reports it. The same empty
-table rule then opens the first cell, so typing goes into the matrix body.
-Names that need their own argument (`array`, `matrix*`, `alignat`) are not
-reachable this way until the entry collects it.
+`\begin` and `\hspace` collect a braced text argument in the command buffer:
+`{` starts the argument, keys extend it, and `}` parses the whole command as
+one snippet. For `\begin`, the parser decides which environment names exist
+and what shape each table has; an unsupported name restores the document and
+reports it. The same empty-table rule then opens the first cell, so typing goes
+into the matrix body. For `\hspace`, the parser validates the length and the
+node is inserted with no editable text inside; the length is chosen while the
+command is typed, not changed afterwards. Names that need their own argument
+(`array`, `matrix*`, `alignat`) are not reachable this way until the entry
+collects it.
 
 Commands whose next token is a delimiter consume the key that ends the
 buffer instead of parsing a bare command:
@@ -276,6 +278,8 @@ host depends on:
   row's child list, so a geometry index matches the model index after a space;
 - `typing_an_environment_name_opens_its_first_cell` — `\begin{matrix}` buffers
   the name, parses the whole environment, and puts the caret in its first cell;
+- `hspace_takes_its_length_in_the_command_buffer` — `\hspace{1em}` validates
+  its length through the parser and inserts the spacing node;
 - `editing_a_named_operator_rewrites_its_name` — a `Function` name is edited as
   text without losing its `Limits`;
 - `operatorname_star_keeps_display_limits` — `*` typed after the command name
@@ -458,9 +462,9 @@ another key. This is a manual check, not a golden-image gate.
 ## Not built yet
 
 - Command arguments beyond the template list; a full command palette and
-  argument placeholders. `\hspace` lengths cannot be entered as keystrokes.
-  An environment's name is chosen when it is inserted; changing it afterwards
-  or entering environments that need their own argument is not built.
+  argument placeholders. An environment's name and a `\hspace` length are
+  chosen when they are inserted; changing them afterwards or entering
+  environments that need their own argument is not built.
 - Incremental layout; the editor relayouts the whole formula per edit, which
   the M5 budget measurements justify at this scale.
 - Browser hosts and the visual golden-image gate. The native window is the
