@@ -323,7 +323,12 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             match out.spelling(model, id) {
                 Some(text) => out.push_token(&text),
                 None => {
-                    if let Some(command) = symbols::sized_delimiter_command(*size, *class) {
+                    // A class outside the four command families has no
+                    // spelling; the plain size command keeps the size, and only
+                    // the class's spacing is lost.
+                    let command = symbols::sized_delimiter_command(*size, *class)
+                        .or_else(|| symbols::sized_delimiter_command(*size, AtomClass::Ord));
+                    if let Some(command) = command {
                         push_command(out, command);
                     }
                 }

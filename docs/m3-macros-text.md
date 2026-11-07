@@ -115,7 +115,10 @@ like any other command.
 3.0 em. The suffix only sets the spacing class (`\bigl(` is Open, `\bigm|` is
 Rel); the height is independent of it. The glyph comes from the same
 stretch-variant protocol as `\left…\right`, so a delimiter with no variant at
-that size keeps its largest drawing rather than scaling outlines.
+that size keeps its largest drawing rather than scaling outlines. The writer
+spells back the four command classes; a class outside them (`Bin`, `Punct`, …)
+has no command, so it falls back to the size's plain `\big` family, keeping the
+height and losing only the class's spacing.
 
 `\middle` is legal only inside `\left…\right`. The group's final height is known
 only after its body is measured, so layout probes the body once without the
@@ -207,6 +210,8 @@ belong to M5's long tail.
 - `spacing_commands_are_glue_not_atoms` — a space node is skipped by the class
   scan and keeps the neighbouring Bin–Ord glue.
 - `sized_delimiters_use_their_fixed_height` — the four fixed targets.
+- `a_sized_delimiter_outside_the_command_classes_keeps_its_size` — a `Bin`
+  delimiter still writes the plain size command; only its class is lost.
 - `middle_delimiters_grow_with_the_enclosing_group` — the probe-and-relayout
   height.
 - `bars_span_the_base_and_clear_it_by_the_math_gaps` — overline/underline rules
@@ -228,6 +233,13 @@ belong to M5's long tail.
 
 ## Corrections
 
+- **A sized delimiter with no command lost its size.** The writer looked up a
+  command for the exact (size, class) pair; a class outside Ord/Open/Close/Rel
+  has none, so it wrote only the glyph and the delimiter shrank to its natural
+  height on reparse. It now falls back to the size's plain `\big` family,
+  keeping the height and losing only the class's spacing;
+  `a_sized_delimiter_outside_the_command_classes_keeps_its_size` fails if the
+  fallback disappears.
 - **A construct in the model and writer is not yet in the language.**
   `\overline` and `\underline` had a `NodeKind`, layout support and writer
   output, and the writer's round-trip list already contained both — but

@@ -1,6 +1,6 @@
 use math_core::{
-    Alignment, AtomClass, Color, ColumnSpacing, FractionRule, Limits, Model, NodeId, NodeKind,
-    Origin, Size, SpaceKind, Span, Style, Variant,
+    Alignment, AtomClass, Color, ColumnSpacing, DelimiterSize, FractionRule, Limits, Model, NodeId,
+    NodeKind, Origin, Size, SpaceKind, Span, Style, Variant,
 };
 use math_syntax::{
     CommandShape, command_shape, command_template, parse, to_latex, to_latex_with_spans,
@@ -866,6 +866,13 @@ fn a_foreign_arrow_keeps_its_symbol_and_labels() {
     let written = to_latex(&arrow, root);
     assert_eq!(written, "\\overset {a}{\\underset {b}{⇒}}");
     assert!(!parse(&written).has_errors(), "{written}");
+}
+
+#[test]
+fn a_sized_delimiter_outside_the_command_classes_keeps_its_size() {
+    let (model, root) =
+        Model::build(|m| m.sized_delimiter('(', DelimiterSize::Big, AtomClass::Bin));
+    assert_eq!(to_latex(&model, root), "\\big (");
 }
 
 #[test]
