@@ -82,8 +82,11 @@ include the braces. Two consequences:
 
 ## Recovery
 
-The parser never aborts; it records a `Diagnostic { span, message }` and keeps
-the surrounding structure.
+The parser never aborts; it records a
+`Diagnostic { span, message, kind }` and keeps the surrounding structure. The
+kind separates `Incomplete` input (an unclosed group or missing argument, which
+a host may treat as still typing) from `UnknownCommand`, `Layout` and other
+errors.
 
 | Input | Result |
 | --- | --- |

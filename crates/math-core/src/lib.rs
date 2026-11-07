@@ -24,7 +24,8 @@ pub use display::{BackgroundItem, GlyphItem, Item, Layout, LineItem, RuleItem};
 pub use font::{Constants, GlyphId, GlyphOutline, InkBounds, MathFont, PathSink, Stretched};
 pub use geometry::{CaretPath, CaretRect, EmptySlot, Geometry, Point, Rect, Step};
 pub use layout::{
-    Diagnostic, layout, layout_with_geometry, layout_with_shaper, layout_with_shaper_and_geometry,
+    Diagnostic, DiagnosticKind, layout, layout_with_geometry, layout_with_shaper,
+    layout_with_shaper_and_geometry,
 };
 pub use node::{
     Alignment, ChildSlot, ColumnSpacing, DelimiterSize, EditError, FractionRule, Length,

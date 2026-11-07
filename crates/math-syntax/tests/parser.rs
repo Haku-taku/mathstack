@@ -1,6 +1,6 @@
 use math_core::{
-    Alignment, AtomClass, Color, ColumnSpacing, DelimiterSize, FractionRule, Limits, Model, NodeId,
-    NodeKind, Origin, Size, SpaceKind, Span, Style, Variant,
+    Alignment, AtomClass, Color, ColumnSpacing, DelimiterSize, DiagnosticKind, FractionRule,
+    Limits, Model, NodeId, NodeKind, Origin, Size, SpaceKind, Span, Style, Variant,
 };
 use math_syntax::{
     CommandShape, command_shape, command_template, parse, to_latex, to_latex_with_spans,
@@ -357,6 +357,30 @@ fn text_mode_decodes_escapes_and_keeps_the_source() {
     assert_eq!(
         to_latex(&document.model, document.root()),
         "\\text{100\\% \\{x\\} \\textbackslash{} y}"
+    );
+}
+
+#[test]
+fn diagnostics_say_whether_input_is_incomplete_or_refused() {
+    let incomplete = parse("\\frac{1}{1+");
+    assert!(incomplete.has_errors());
+    assert!(
+        incomplete
+            .diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.kind == DiagnosticKind::Incomplete),
+        "{:?}",
+        incomplete.diagnostics
+    );
+
+    let unknown = parse("\\frc");
+    assert!(
+        unknown
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.kind == DiagnosticKind::UnknownCommand),
+        "{:?}",
+        unknown.diagnostics
     );
 }
 

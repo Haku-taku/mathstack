@@ -135,6 +135,16 @@ impl Parser<'_> {
         self.diagnostics.push(Diagnostic::new(span, message));
     }
 
+    /// Input that ends inside a construct: a host may treat it as still typing.
+    fn incomplete(&mut self, span: Span, message: impl Into<String>) {
+        self.diagnostics.push(Diagnostic::incomplete(span, message));
+    }
+
+    fn unknown_command(&mut self, span: Span, message: impl Into<String>) {
+        self.diagnostics
+            .push(Diagnostic::unknown_command(span, message));
+    }
+
     fn make(&mut self, kind: NodeKind, span: Span) -> NodeId {
         self.nodes += 1;
         self.model.alloc(kind, span)
@@ -310,7 +320,7 @@ impl Parser<'_> {
     ) -> NodeId {
         self.advance();
         if children.is_empty() {
-            self.error(command_span, format!("missing numerator before \\{name}"));
+            self.incomplete(command_span, format!("missing numerator before \\{name}"));
         }
         let numerator_end = children
             .last()
@@ -321,7 +331,7 @@ impl Parser<'_> {
         );
         let denominator = self.parse_row(depth, stop);
         if matches!(self.model.kind(denominator), NodeKind::Row(children) if children.is_empty()) {
-            self.error(command_span, format!("missing denominator after \\{name}"));
+            self.incomplete(command_span, format!("missing denominator after \\{name}"));
         }
         let span = self
             .span_of(numerator)
@@ -706,7 +716,7 @@ impl Parser<'_> {
                         end = self.advance().map_or(end, |token| token.span.end);
                     } else {
                         let at = self.caret();
-                        self.error(Span::new(span.start, at), "missing `]`");
+                        self.incomplete(Span::new(span.start, at), "missing `]`");
                         end = at;
                     }
                     Some(under)
@@ -857,7 +867,7 @@ impl Parser<'_> {
                         end = self.advance().expect("peeked `]`").span.end;
                     } else {
                         let at = self.caret();
-                        self.error(Span::empty(at), "missing `]` after the index");
+                        self.incomplete(Span::empty(at), "missing `]` after the index");
                     }
                     Some(degree)
                 } else {
@@ -1207,7 +1217,7 @@ impl Parser<'_> {
                     right
                 } else {
                     let at = self.caret();
-                    self.error(Span::empty(at), "`\\left` without `\\right`");
+                    self.incomplete(Span::empty(at), "`\\left` without `\\right`");
                     None
                 };
                 self.make(
@@ -1284,7 +1294,7 @@ impl Parser<'_> {
                     )
                 } else {
                     let raw = format!("\\{name}");
-                    self.error(span, format!("unknown command {raw}"));
+                    self.unknown_command(span, format!("unknown command {raw}"));
                     self.make(NodeKind::Error(raw), span)
                 }
             }
@@ -1310,7 +1320,7 @@ impl Parser<'_> {
                 self.take_environment_end(&name, name_span)
             } else {
                 let at = self.caret();
-                self.error(
+                self.incomplete(
                     Span::new(span.start, at),
                     format!("missing `\\end{{{name}}}`"),
                 );
@@ -1350,7 +1360,7 @@ impl Parser<'_> {
             }
             if self.peek().is_none() {
                 let at = self.caret();
-                self.error(
+                self.incomplete(
                     Span::new(span.start, at),
                     format!("missing `\\end{{{name}}}`"),
                 );
@@ -1397,7 +1407,7 @@ impl Parser<'_> {
             } else {
                 let token = self.advance();
                 if let Some(token) = token {
-                    self.error(token.span, format!("expected `\\` or `\\end{{{name}}}`"));
+                    self.incomplete(token.span, format!("expected `\\` or `\\end{{{name}}}`"));
                 }
                 continue;
             }
@@ -1505,7 +1515,7 @@ impl Parser<'_> {
                         self.error(span, "expected `l`, `c` or `r`");
                     }
                     Some((span, true)) => self.error(span, "expected `l`, `c` or `r`"),
-                    None => self.error(Span::empty(self.caret()), "expected `l`, `c` or `r`"),
+                    None => self.incomplete(Span::empty(self.caret()), "expected `l`, `c` or `r`"),
                 }
                 None
             }
@@ -1516,7 +1526,7 @@ impl Parser<'_> {
         ) {
             self.advance();
         } else {
-            self.error(Span::empty(self.caret()), "expected `]`");
+            self.incomplete(Span::empty(self.caret()), "expected `]`");
             // Recover to the closing bracket so the rows still parse.
             while let Some(token) = self.peek() {
                 match &token.kind {
@@ -1640,11 +1650,11 @@ impl Parser<'_> {
     /// separated by `\\` and the closing brace ends the grid.
     fn parse_substack(&mut self, span: Span, depth: usize) -> NodeId {
         let Some(open) = self.peek().cloned() else {
-            self.error(span, "missing argument for \\substack");
+            self.incomplete(span, "missing argument for \\substack");
             return self.make(NodeKind::Error("\\substack".to_owned()), span);
         };
         if !matches!(open.kind, TokenKind::LBrace) {
-            self.error(open.span, "expected `{` after \\substack");
+            self.incomplete(open.span, "expected `{` after \\substack");
             return self.make(NodeKind::Error("\\substack".to_owned()), span);
         }
         self.advance();
@@ -1660,7 +1670,7 @@ impl Parser<'_> {
             }
             if self.peek().is_none() {
                 let at = self.caret();
-                self.error(Span::new(span.start, at), "missing `}` after \\substack");
+                self.incomplete(Span::new(span.start, at), "missing `}` after \\substack");
                 break at;
             }
             let mut row = Vec::new();
@@ -1696,7 +1706,7 @@ impl Parser<'_> {
             } else {
                 let token = self.advance();
                 if let Some(token) = token {
-                    self.error(token.span, "expected `\\` or `}`");
+                    self.incomplete(token.span, "expected `\\` or `}`");
                 }
             }
         };
@@ -1825,11 +1835,11 @@ impl Parser<'_> {
     /// expansion, so an expanded color still reads its text.
     fn color_argument(&mut self, command: &str, span: Span) -> (Color, Span) {
         let Some(open) = self.peek().cloned() else {
-            self.error(span, format!("missing color for {command}"));
+            self.incomplete(span, format!("missing color for {command}"));
             return (Color::BLACK, span);
         };
         if !matches!(open.kind, TokenKind::LBrace) {
-            self.error(open.span, format!("expected `{{` after {command}"));
+            self.incomplete(open.span, format!("expected `{{` after {command}"));
             return (Color::BLACK, open.span);
         }
         self.advance();
@@ -1874,17 +1884,17 @@ impl Parser<'_> {
             }
         }
         let end = self.caret();
-        self.error(Span::new(span.start, end), "unclosed color argument");
+        self.incomplete(Span::new(span.start, end), "unclosed color argument");
         (Color::BLACK, Span::new(span.start, end))
     }
 
     fn text_argument(&mut self, command: &str, span: Span) -> TextArgument {
         let Some(open) = self.peek().cloned() else {
-            self.error(span, format!("missing argument for {command}"));
+            self.incomplete(span, format!("missing argument for {command}"));
             return TextArgument::Unavailable(span);
         };
         if !matches!(open.kind, TokenKind::LBrace) {
-            self.error(open.span, format!("expected `{{` after {command}"));
+            self.incomplete(open.span, format!("expected `{{` after {command}"));
             return TextArgument::Unavailable(Span::empty(open.span.start));
         }
         self.advance();
@@ -1924,7 +1934,7 @@ impl Parser<'_> {
                 let text = self.source[open.span.end..].to_owned();
                 let end = self.source.len();
                 self.index = self.tokens.len();
-                self.error(Span::new(span.start, end), "unclosed text argument");
+                self.incomplete(Span::new(span.start, end), "unclosed text argument");
                 TextArgument::Text(text, Span::new(span.start, end))
             }
         }
@@ -1941,7 +1951,7 @@ impl Parser<'_> {
             Span::new(open.span.start, close.span.end)
         } else {
             let end = self.span_of(row).end.max(open.span.end);
-            self.error(Span::new(open.span.start, end), "unclosed `{`");
+            self.incomplete(Span::new(open.span.start, end), "unclosed `{`");
             Span::new(open.span.start, end)
         };
         self.model.set_span(row, span);
@@ -1967,7 +1977,7 @@ impl Parser<'_> {
 
     fn missing(&mut self, what: &str) -> NodeId {
         let at = self.caret();
-        self.error(Span::empty(at), format!("missing argument for {what}"));
+        self.incomplete(Span::empty(at), format!("missing argument for {what}"));
         self.make(NodeKind::Row(Vec::new()), Span::empty(at))
     }
 
@@ -2000,7 +2010,7 @@ impl Parser<'_> {
     fn parse_delimiter(&mut self) -> Option<char> {
         let Some(token) = self.peek().cloned() else {
             let at = self.caret();
-            self.error(Span::empty(at), "missing delimiter");
+            self.incomplete(Span::empty(at), "missing delimiter");
             return None;
         };
         match token.kind {

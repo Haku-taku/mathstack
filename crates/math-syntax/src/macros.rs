@@ -96,7 +96,10 @@ fn define_def(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let Some(name_token) = input.pop_front() else {
-        diagnostics.push(Diagnostic::new(span, "missing macro name after \\def"));
+        diagnostics.push(Diagnostic::incomplete(
+            span,
+            "missing macro name after \\def",
+        ));
         return;
     };
     let TokenKind::Command(name) = &name_token.kind else {
@@ -141,13 +144,19 @@ fn define_def(
                 input.pop_front();
             }
             None => {
-                diagnostics.push(Diagnostic::new(name_token.span, "missing macro body"));
+                diagnostics.push(Diagnostic::incomplete(
+                    name_token.span,
+                    "missing macro body",
+                ));
                 return;
             }
         }
     }
     let Some(body) = collect_group(input) else {
-        diagnostics.push(Diagnostic::new(name_token.span, "missing macro body"));
+        diagnostics.push(Diagnostic::incomplete(
+            name_token.span,
+            "missing macro body",
+        ));
         return;
     };
     check_parameters(&body, parameters, name_token.span, diagnostics);
@@ -191,7 +200,7 @@ fn define_new(
         parameters = digits.parse().unwrap_or(0);
     }
     let Some(body) = collect_group(input) else {
-        diagnostics.push(Diagnostic::new(span, "missing macro body"));
+        diagnostics.push(Diagnostic::incomplete(span, "missing macro body"));
         return;
     };
     let exists = macros.contains_key(&name);
@@ -249,7 +258,7 @@ fn take_macro_name(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<String> {
     let Some(token) = input.pop_front() else {
-        diagnostics.push(Diagnostic::new(span, "missing macro name"));
+        diagnostics.push(Diagnostic::incomplete(span, "missing macro name"));
         return None;
     };
     match token.kind {
@@ -308,7 +317,7 @@ fn collect_argument(
             _ => argument.push(token),
         }
     }
-    diagnostics.push(Diagnostic::new(call, "unclosed macro argument"));
+    diagnostics.push(Diagnostic::incomplete(call, "unclosed macro argument"));
     Some(argument)
 }
 

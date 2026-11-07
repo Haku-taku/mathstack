@@ -68,7 +68,7 @@ pub(crate) fn lex(source: &str) -> (Vec<Token>, Vec<Diagnostic>) {
                         position += other.len_utf8();
                     }
                     None => {
-                        diagnostics.push(Diagnostic::new(
+                        diagnostics.push(Diagnostic::incomplete(
                             Span::new(start, position),
                             "backslash at end of input",
                         ));

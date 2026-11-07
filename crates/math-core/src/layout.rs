@@ -22,11 +22,26 @@ use crate::span::Span;
 use crate::style::{Size, Style};
 use crate::text::{FontShaper, TextShaper, TextStyle};
 
+/// What kind of problem a diagnostic reports. A host can treat `Incomplete`
+/// as "still typing" and surface the rest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiagnosticKind {
+    /// The input ends before the construct does, such as an unclosed group.
+    Incomplete,
+    /// A control sequence the parser does not know.
+    UnknownCommand,
+    /// Layout refused the construct, such as a missing glyph.
+    Layout,
+    /// Any other syntax error.
+    Other,
+}
+
 /// A layout problem for the caller to surface, anchored to its source.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {
     pub span: Span,
     pub message: String,
+    pub kind: DiagnosticKind,
 }
 
 impl Diagnostic {
@@ -34,7 +49,33 @@ impl Diagnostic {
         Diagnostic {
             span,
             message: message.into(),
+            kind: DiagnosticKind::Other,
         }
+    }
+
+    pub fn incomplete(span: Span, message: impl Into<String>) -> Self {
+        Diagnostic {
+            kind: DiagnosticKind::Incomplete,
+            ..Diagnostic::new(span, message)
+        }
+    }
+
+    pub fn unknown_command(span: Span, message: impl Into<String>) -> Self {
+        Diagnostic {
+            kind: DiagnosticKind::UnknownCommand,
+            ..Diagnostic::new(span, message)
+        }
+    }
+
+    pub fn layout(span: Span, message: impl Into<String>) -> Self {
+        Diagnostic {
+            kind: DiagnosticKind::Layout,
+            ..Diagnostic::new(span, message)
+        }
+    }
+
+    pub fn is_incomplete(&self) -> bool {
+        self.kind == DiagnosticKind::Incomplete
     }
 }
 
@@ -488,7 +529,7 @@ fn layout_atom(
         _ => 0,
     };
     let Some(base) = resolve_glyph(cx, atom.symbol, atom.variant) else {
-        diagnostics.push(Diagnostic::new(
+        diagnostics.push(Diagnostic::layout(
             span,
             format!("no glyph for U+{:04X}", atom.symbol as u32),
         ));
@@ -570,7 +611,7 @@ fn layout_text(
         }));
     }
     for symbol in run.missing {
-        diagnostics.push(Diagnostic::new(
+        diagnostics.push(Diagnostic::layout(
             span,
             format!("no glyph for U+{:04X} in text", symbol as u32),
         ));
@@ -1030,7 +1071,7 @@ fn delimiter_box(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> MathBox {
     let Some(glyph) = cx.font.glyph(symbol) else {
-        diagnostics.push(Diagnostic::new(
+        diagnostics.push(Diagnostic::layout(
             span,
             format!("no glyph for delimiter U+{:04X}", symbol as u32),
         ));
@@ -1091,7 +1132,7 @@ fn layout_large_op(
     let em = style.em(cx.font, size);
     let constants = cx.font.constants();
     let Some(glyph) = cx.font.glyph(symbol) else {
-        diagnostics.push(Diagnostic::new(
+        diagnostics.push(Diagnostic::layout(
             span,
             format!("no glyph for large operator U+{:04X}", symbol as u32),
         ));
@@ -1138,7 +1179,7 @@ fn layout_accent(
     // Accents keep their size: no script-level bump.
     let base = layout_node(cx, base_node, size, style, diagnostics);
     let Some(glyph) = cx.font.glyph(symbol) else {
-        diagnostics.push(Diagnostic::new(
+        diagnostics.push(Diagnostic::layout(
             span,
             format!("no glyph for accent U+{:04X}", symbol as u32),
         ));
@@ -1765,7 +1806,7 @@ fn layout_table(
     let mut grid: Vec<(NodeId, Vec<MathBox>)> = Vec::new();
     for row_id in rows {
         let NodeKind::TableRow { cells } = cx.model.kind(*row_id) else {
-            diagnostics.push(Diagnostic::new(
+            diagnostics.push(Diagnostic::layout(
                 cx.model.span(*row_id),
                 "a table row must be a row of cells",
             ));
@@ -2024,7 +2065,7 @@ fn layout_arrow(
     let mut width = (label_width + 0.5 * em).max(em);
 
     let Some(glyph) = cx.font.glyph(symbol) else {
-        diagnostics.push(Diagnostic::new(
+        diagnostics.push(Diagnostic::layout(
             span,
             format!("font has no glyph for U+{:04X}", symbol as u32),
         ));
@@ -2082,7 +2123,7 @@ fn layout_under_arrow(
     let mut width = body.width.max(em);
 
     let Some(glyph) = cx.font.glyph(symbol) else {
-        diagnostics.push(Diagnostic::new(
+        diagnostics.push(Diagnostic::layout(
             span,
             format!("font has no glyph for U+{:04X}", symbol as u32),
         ));
@@ -2145,7 +2186,7 @@ fn layout_horizontal_brace(
             (Some(stretched), brace_width, ascent, descent)
         }
         None => {
-            diagnostics.push(Diagnostic::new(
+            diagnostics.push(Diagnostic::layout(
                 span,
                 format!("font has no glyph for U+{:04X}", symbol as u32),
             ));

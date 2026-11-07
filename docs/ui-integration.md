@@ -65,18 +65,16 @@ assumption the adapter must test first on a real system face.
 
 ## Gaps that need a decision before 7.2
 
-1. **Structured diagnostics.** `math_core::Diagnostic` is `{ span, message }`
-   (`crates/math-core/src/layout.rs:26`). The UI distinguishes "still typing"
-   from "refused token": `\frac{1}{1+` must lay out with no error mark, while
-   `\frc` must produce one. mathstack currently reports both through the same
-   type (`"unclosed \`{\`"` versus `"unknown command \frc"`), and matching on
-   message text would be a patch. Add a kind (`Incomplete`, `UnknownCommand`,
-   `Layout`, …) at the source and keep the message for the UI.
-2. **Cancellation lines.** `math_core::Item::Line` is emitted by
-   `\cancel`, but `ui_core::MathItem` has no line variant and the paint path
-   (`text_pass.rs:550`) draws only glyphs, rules and backgrounds. Either add a
-   stroked segment to `ui-core` and the rasterizer, or accept that replacing
-   the pipeline drops `\cancel` (formulary does not draw it either).
+1. **Structured diagnostics — resolved.** `math_core::Diagnostic` now carries a
+   `kind` (`Incomplete`, `UnknownCommand`, `Layout`, `Other`) beside the
+   message. `\frac{1}{1+` reports only `Incomplete`; `\frc` reports
+   `UnknownCommand`; layout refusals report `Layout`. The adapter maps
+   `Incomplete` to no error mark and every other kind to one, so no message
+   matching is needed.
+2. **Cancellation lines — approved, not yet implemented.** `math_core::Item::Line`
+   is emitted by `\cancel`; the UI will gain a stroked (rotated) segment in
+   `ui-core`, the rasterizer and the math paint path, so the replacement keeps
+   cancellation lines instead of dropping them.
 3. **Colours.** `\color`/`\textcolor` now reach `Item::Glyph.color`,
    `Item::Rule.color` and `Item::Line.color` as `math_core::Color`. Both
    `MathItem::Glyph` and `MathItem::Rule` already carry `color: Option<Color>`
@@ -93,7 +91,8 @@ assumption the adapter must test first on a real system face.
 
 ## Work plan for 7.2 and 7.3
 
-1. In mathstack: add `DiagnosticKind` and `Face::has_math`; keep the text.
+1. In mathstack: `DiagnosticKind` and `Face::has_math` are done; keep the text
+   for the host and map incomplete input in the adapter.
 2. In `ui-math`: replace the internals, keep the public API and `Error`
    variants; dependencies become `math-core`, `math-syntax`, `math-font`
    (drop `formulary` and `pulldown-latex`, which no other crate uses).
