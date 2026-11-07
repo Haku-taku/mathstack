@@ -842,6 +842,16 @@ impl Editor {
                 self.update_command(font);
                 true
             }
+            // `\operatorname*` is one spelling: the star is part of the
+            // command buffer, not a literal typed into the formula.
+            Key::Character('*') if self.command.as_deref() == Some("operatorname") => {
+                if let Some(command) = &mut self.command {
+                    command.push('*');
+                }
+                self.command_ime_start = None;
+                self.update_command(font);
+                true
+            }
             Key::Character(symbol) if is_command_letter(symbol) => {
                 if let Some(command) = &mut self.command {
                     command.push(symbol);

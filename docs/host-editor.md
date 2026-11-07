@@ -111,6 +111,8 @@ an empty body and put the caret inside it. `\text` inserts an empty `Text`
 leaf and puts the caret inside it, so text is edited as a string.
 `\operatorname` does the same with the operator's name: `Function` names are
 text-editable like a `Text` leaf, and editing preserves the node's `Limits`.
+The star in `\operatorname*` belongs to the pending command, not to the
+formula: typing it before the command resolves sets display limits.
 `\pmod` inserts its argument as an empty row, and the caret enters that row;
 its source still canonicalizes to the `\quad \text{(mod}\,…)` expansion
 because the writer stores semantics, not the `\pmod` spelling.
@@ -260,6 +262,8 @@ host depends on:
   row's child list, so a geometry index matches the model index after a space;
 - `editing_a_named_operator_rewrites_its_name` — a `Function` name is edited as
   text without losing its `Limits`;
+- `operatorname_star_keeps_display_limits` — `*` typed after the command name
+  sets display limits instead of becoming a literal;
 - `a_script_shortcut_wraps_the_previous_symbol` — script construction;
 - `a_selection_is_replaced_in_one_undo_step` — selection deletion and history;
 - `a_cut_selection_round_trips_through_the_clipboard` — select-all, selection
@@ -439,8 +443,8 @@ another key. This is a manual check, not a golden-image gate.
 
 - Command arguments beyond the template list; a full command palette and
   argument placeholders. Keystroke entry does not cover environment names
-  (`\begin`), lengths (`\hspace`), delimiter lists (`\genfrac`), `\substack`
-  rows, or `\operatorname*`'s star.
+  (`\begin`), lengths (`\hspace`), delimiter lists (`\genfrac`) or
+  `\substack` rows.
 - Incremental layout; the editor relayouts the whole formula per edit, which
   the M5 budget measurements justify at this scale.
 - Browser hosts and the visual golden-image gate. The native window is the

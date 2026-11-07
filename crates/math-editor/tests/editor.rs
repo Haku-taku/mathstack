@@ -757,6 +757,17 @@ fn an_empty_operatorname_puts_the_caret_in_the_name() {
 }
 
 #[test]
+fn operatorname_star_keeps_display_limits() {
+    let mut editor = editor("");
+    press_command(&mut editor, "operatorname");
+    press(&mut editor, Key::Character('*'));
+    press(&mut editor, Key::Character(' '));
+    assert_eq!(editor.source(), "\\operatorname*{}");
+    press(&mut editor, Key::Character('r'));
+    assert_eq!(editor.source(), "\\operatorname*{r}");
+}
+
+#[test]
 fn editing_a_named_operator_rewrites_its_name() {
     let mut editor = editor("\\operatorname{rank}");
     let function = find_function(editor.model(), editor.model().root()).expect("a function");

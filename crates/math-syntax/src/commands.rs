@@ -49,7 +49,9 @@ pub fn command_shape(name: &str) -> CommandShape {
         "sqrt" => CommandShape::OptionalMathArgument,
         "smash" => CommandShape::OptionalFlagArgument,
         "xrightarrow" | "xleftarrow" => CommandShape::OptionalUnderArgument,
-        "text" | "operatorname" | "operatornamewithlimits" => CommandShape::NameArgument,
+        "text" | "operatorname" | "operatornamewithlimits" | "operatorname*" => {
+            CommandShape::NameArgument
+        }
         "hspace" => CommandShape::Length,
         "genfrac" | "substack" | "pmod" | "color" | "textcolor" | "colorbox" | "fcolorbox"
         | "mathchoice" => CommandShape::Special,
@@ -88,13 +90,18 @@ pub fn delimiter_symbol(name: &str) -> Option<char> {
 }
 
 /// The empty-argument snippet a host may insert for `name`, when the shape
-/// allows one. A name argument still needs model support the editor does not
-/// have, so it deliberately returns `None`.
+/// allows one. `\operatorname*` is not a parser command name, but the editor's
+/// command buffer uses it as the spelling that sets display limits.
 pub fn command_template(name: &str) -> Option<String> {
     match command_shape(name) {
         CommandShape::TwoMathArguments => Some(format!("\\{name}{{}}{{}}")),
         CommandShape::NameArgument if name == "text" => Some("\\text{}".to_owned()),
-        CommandShape::NameArgument if matches!(name, "operatorname" | "operatornamewithlimits") => {
+        CommandShape::NameArgument
+            if matches!(
+                name,
+                "operatorname" | "operatornamewithlimits" | "operatorname*"
+            ) =>
+        {
             Some(format!("\\{name}{{}}"))
         }
         CommandShape::Special if name == "pmod" => Some("\\pmod{}".to_owned()),

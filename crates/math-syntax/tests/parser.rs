@@ -1578,6 +1578,11 @@ fn command_shapes_describe_what_the_parser_expects() {
         command_shape("operatornamewithlimits"),
         CommandShape::NameArgument
     );
+    assert_eq!(command_shape("operatorname*"), CommandShape::NameArgument);
+    assert_eq!(
+        command_template("operatorname*").as_deref(),
+        Some("\\operatorname*{}")
+    );
     assert_eq!(command_shape("mod"), CommandShape::MathArgument);
     assert_eq!(command_template("pod").as_deref(), Some("\\pod{}"));
     assert_eq!(command_shape("begin"), CommandShape::Environment);
