@@ -36,11 +36,13 @@ design document carries a `## Corrections` paragraph.
   spelling. The writer preserves rendering, symbol and labels, but the reparse
   yields the plain body, an `OverUnder`, or a differently classed delimiter.
   The parser and editor never build these states; only a host calling
-  `ModelBuilder`/`Model` does.
+  `ModelBuilder`/`Model` does. `to_latex_with_report` now names each one
+  (`WrapperDropped`, `LostStretch`, `LostClass`), so an export can warn
+  instead of discovering the change after a reparse.
 - **A color box body is a text slot.** `ColorBox` has a `NodeId` body for
   uniformity, but only `Text` has a spelling. A host that puts math there gets
   an empty body on write (the output then reports the missing argument) rather
-  than a silent text conversion.
+  than a silent text conversion; the report names it `DroppedBody`.
 - **Color arguments are not byte-preserving.** A `\color` declaration keeps a
   spelling for `\color{…}`, but its text is reconstructed from the resolved
   color, so `\color{grey}` exports as `\color{gray}` and `\color{#f00}` as
@@ -52,9 +54,9 @@ design document carries a `## Corrections` paragraph.
   reports `unknown command`. `\mathstrut` does insert. Supporting these needs a
   color-argument shape (or template) and, for colors, an editable color
   parameter; the same applies to the existing `color`/`textcolor`.
-- **An unknown accent symbol writes `\hat`.** The writer has no diagnostic
-  channel, and the parser never produces an accent outside the table; the
-  fallback is documented at the writer arm.
+- **An unknown accent symbol writes `\hat`.** The parser never produces an
+  accent outside the table; a host-built one falls back to `\hat` and is now
+  reported as `SubstitutedMark`.
 - **`Model::set_root` and stale ids — resolved.** `set_root` now returns
   `EditError::NoSuchNode` for a freed root and frees every node the new root no
   longer reaches, so the old tree cannot accumulate; `try_node`/`try_kind`

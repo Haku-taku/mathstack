@@ -138,6 +138,16 @@ appear in a parsed tree.
 Bar-less fractions (`bar: false`) come from `\atop`; the writer prints such a
 fraction as `\atop` between its parts, so the rule-less form round-trips.
 
+Some model states have no exact LaTeX spelling: a no-op `Cancel`, an `Arrow`
+whose symbol has no stretched command, a sized delimiter with an unusual
+class, a `ColorBox` whose body is not text, an unknown accent mark, or a
+colour with alpha. `to_latex` writes the nearest form silently; the new
+`to_latex_with_report` returns the same text plus a `WriteReport` naming each
+node and `LossKind` (`DroppedBody`, `LostStretch`, `LostClass`,
+`SubstitutedMark`, `Portability`, `WrapperDropped`). The report is separate
+from `Diagnostic` so a host can show a notice rather than an error mark, and
+`LossKind::WrapperDropped` marks losses that are invisible in the rendering.
+
 ## Not yet
 
 Macros, accents, font commands, `\text`, spacing commands, `\middle`, the

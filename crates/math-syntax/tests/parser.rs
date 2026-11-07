@@ -3,7 +3,8 @@ use math_core::{
     Limits, Model, NodeId, NodeKind, Origin, Size, SpaceKind, Span, Style, Variant,
 };
 use math_syntax::{
-    CommandShape, command_shape, command_template, parse, to_latex, to_latex_with_spans,
+    CommandShape, LossKind, command_shape, command_template, parse, to_latex, to_latex_with_report,
+    to_latex_with_spans,
 };
 
 fn row(model: &Model, id: NodeId) -> &[NodeId] {
@@ -1505,6 +1506,42 @@ fn exported_spans_cover_the_text_each_node_wrote() {
     let printed = &text[fraction.start..fraction.end];
     assert!(printed.starts_with("\\frac "), "{printed}");
     assert!(printed.ends_with('}'), "{printed}");
+}
+
+#[test]
+fn the_writer_reports_each_approximation() {
+    let (model, root) = Model::build(|m| {
+        let math = m.symbol('x');
+        let colorbox = m.color_box(Color::rgb(255, 0, 0), None, math);
+        let arrow = m.arrow('\u{21D2}', None, None);
+        let sized = m.sized_delimiter('(', DelimiterSize::Big, AtomClass::Bin);
+        let accent_base = m.symbol('x');
+        let accent = m.accent(accent_base, '^');
+        let cancel_body = m.symbol('y');
+        let cancel = m.cancel(cancel_body, false, false);
+        let variant_body = m.symbol('z');
+        let variant = m.variant(Variant::Normal, variant_body);
+        let color_body = m.symbol('w');
+        let color = m.color(Color::rgba(1, 2, 3, 4), color_body);
+        m.row(vec![colorbox, arrow, sized, accent, cancel, variant, color])
+    });
+
+    let (text, report) = to_latex_with_report(&model, root);
+    let kinds: Vec<LossKind> = report.losses.iter().map(|loss| loss.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![
+            LossKind::DroppedBody,
+            LossKind::LostStretch,
+            LossKind::LostClass,
+            LossKind::SubstitutedMark,
+            LossKind::WrapperDropped,
+            LossKind::WrapperDropped,
+            LossKind::Portability,
+        ]
+    );
+    assert_eq!(report.visible().count(), 5);
+    assert_eq!(to_latex(&model, root), text);
 }
 
 #[test]

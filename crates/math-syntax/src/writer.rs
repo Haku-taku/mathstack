@@ -12,6 +12,61 @@ use math_core::{
     NodeId, NodeKind, Origin, Size, Span, Style,
 };
 
+/// A way the writer had to approximate a model state that has no exact LaTeX
+/// spelling. Kept out of `Diagnostic` so a host can show a notice instead of an
+/// error mark.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LossKind {
+    /// A `ColorBox` body that is not `Text` cannot be written as a text
+    /// argument and is omitted.
+    DroppedBody,
+    /// An `Arrow` whose symbol has no stretched command loses its stretch.
+    LostStretch,
+    /// A `SizedDelimiter` class outside the four command families loses its
+    /// class spacing but keeps its height.
+    LostClass,
+    /// An `Accent` symbol with no command falls back to `\hat`.
+    SubstitutedMark,
+    /// A value only our reader accepts, such as an alpha-bearing colour.
+    Portability,
+    /// A wrapper with no observable effect, such as a directionless `Cancel`.
+    /// Writing its body alone is exact in rendering; hosts normally ignore it.
+    WrapperDropped,
+}
+
+impl LossKind {
+    /// Whether dropping the construct is invisible in the rendered formula.
+    pub fn is_silent(self) -> bool {
+        self == LossKind::WrapperDropped
+    }
+}
+
+/// One approximation, at the node whose state the writer could not spell.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WriteLoss {
+    pub node: NodeId,
+    /// The node's source span; empty for a synthetic node.
+    pub span: Span,
+    pub kind: LossKind,
+}
+
+/// Approximations made while writing, in output order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WriteReport {
+    pub losses: Vec<WriteLoss>,
+}
+
+impl WriteReport {
+    pub fn is_empty(&self) -> bool {
+        self.losses.is_empty()
+    }
+
+    /// Losses a host should tell the user about.
+    pub fn visible(&self) -> impl Iterator<Item = &WriteLoss> {
+        self.losses.iter().filter(|loss| !loss.kind.is_silent())
+    }
+}
+
 /// Where a node sits: a nested row in an item position needs braces to stay a
 /// row, while an argument's braces are supplied by its caller.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -55,19 +110,53 @@ pub fn to_latex_with_spans_and_spellings(
     root: NodeId,
     spellings: &Spellings,
 ) -> (String, Vec<(NodeId, Span)>) {
+    let (text, spans, _) = write_document(model, root, spellings);
+    (text, spans)
+}
+
+/// Writes the subtree and reports every place the model could not be spelled
+/// exactly, such as an API-built math body inside `\colorbox`.
+pub fn to_latex_with_report(model: &Model, root: NodeId) -> (String, WriteReport) {
+    to_latex_with_spellings_and_report(model, root, &Spellings::default())
+}
+
+pub fn to_latex_with_spellings_and_report(
+    model: &Model,
+    root: NodeId,
+    spellings: &Spellings,
+) -> (String, WriteReport) {
+    let (text, _, report) = write_document(model, root, spellings);
+    (text, report)
+}
+
+/// Writes the subtree and records both output spans and approximations.
+pub fn to_latex_with_spans_and_report(
+    model: &Model,
+    root: NodeId,
+) -> (String, Vec<(NodeId, Span)>, WriteReport) {
+    write_document(model, root, &Spellings::default())
+}
+
+fn write_document(
+    model: &Model,
+    root: NodeId,
+    spellings: &Spellings,
+) -> (String, Vec<(NodeId, Span)>, WriteReport) {
     let mut out = Output {
         text: String::new(),
         spans: Vec::new(),
         spellings,
+        report: WriteReport::default(),
     };
     write(model, root, Context::Top, &mut out);
-    (out.text, out.spans)
+    (out.text, out.spans, out.report)
 }
 
 struct Output<'a> {
     text: String,
     spans: Vec<(NodeId, Span)>,
     spellings: &'a Spellings,
+    report: WriteReport,
 }
 
 impl Output<'_> {
@@ -104,6 +193,21 @@ impl Output<'_> {
         } else {
             None
         }
+    }
+
+    fn loss(&mut self, model: &Model, id: NodeId, kind: LossKind) {
+        self.report.losses.push(WriteLoss {
+            node: id,
+            span: model.span(id),
+            kind,
+        });
+    }
+
+    fn color(&mut self, model: &Model, id: NodeId, color: math_core::Color) {
+        if !color.is_opaque() {
+            self.loss(model, id, LossKind::Portability);
+        }
+        self.push_str(&colors::write(color));
     }
 }
 
@@ -231,7 +335,13 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             match out.spelling(model, id) {
                 Some(text) => out.push_token(&text),
                 None => {
-                    let name = symbols::accent_command(*symbol).unwrap_or("hat");
+                    let name = match symbols::accent_command(*symbol) {
+                        Some(name) => name,
+                        None => {
+                            out.loss(model, id, LossKind::SubstitutedMark);
+                            "hat"
+                        }
+                    };
                     push_command(out, name);
                 }
             }
@@ -326,9 +436,13 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                     // A class outside the four command families has no
                     // spelling; the plain size command keeps the size, and only
                     // the class's spacing is lost.
-                    let command = symbols::sized_delimiter_command(*size, *class)
-                        .or_else(|| symbols::sized_delimiter_command(*size, AtomClass::Ord));
-                    if let Some(command) = command {
+                    let command = symbols::sized_delimiter_command(*size, *class);
+                    if command.is_none() {
+                        out.loss(model, id, LossKind::LostClass);
+                    }
+                    if let Some(command) =
+                        command.or_else(|| symbols::sized_delimiter_command(*size, AtomClass::Ord))
+                    {
                         push_command(out, command);
                     }
                 }
@@ -352,7 +466,10 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
         NodeKind::Smash { body, top, bottom } => match (*top, *bottom) {
             // No flag to smash is a no-op; `\smash` without a flag would smash
             // both dimensions, so the body alone is the faithful spelling.
-            (false, false) => write(model, *body, context, out),
+            (false, false) => {
+                out.loss(model, id, LossKind::WrapperDropped);
+                write(model, *body, context, out)
+            }
             (top, bottom) => {
                 push_command(out, "smash");
                 if top && !bottom {
@@ -384,7 +501,10 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                 push_command(out, command);
                 write_argument(model, *body, out);
             }
-            None => write(model, *body, context, out),
+            None => {
+                out.loss(model, id, LossKind::WrapperDropped);
+                write(model, *body, context, out)
+            }
         },
         NodeKind::ColorBox {
             background,
@@ -395,13 +515,13 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                 Some(border) => {
                     push_command(out, "fcolorbox");
                     out.push('{');
-                    out.push_str(&colors::write(*border));
+                    out.color(model, id, *border);
                     out.push('}');
                 }
                 None => push_command(out, "colorbox"),
             }
             out.push('{');
-            out.push_str(&colors::write(*background));
+            out.color(model, id, *background);
             out.push('}');
             // The body is a text argument: only Text has a spelling here.
             // Omitting anything else keeps a missing argument an error and
@@ -410,6 +530,8 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                 out.push('{');
                 write_text(text, out);
                 out.push('}');
+            } else {
+                out.loss(model, id, LossKind::DroppedBody);
             }
         }
         NodeKind::Color { color, body } => match out.spelling(model, id) {
@@ -420,7 +542,7 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             None => {
                 push_command(out, "textcolor");
                 out.push('{');
-                out.push_str(&colors::write(*color));
+                out.color(model, id, *color);
                 out.push('}');
                 write_argument(model, *body, out);
             }
@@ -464,6 +586,7 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             // No stretched-under command for this arrow: keep the symbol
             // under the body, losing only the stretch.
             _ => {
+                out.loss(model, id, LossKind::LostStretch);
                 push_command(out, "underset");
                 write_symbol_argument(*symbol, out);
                 write_argument(model, *body, out);
@@ -493,6 +616,7 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                     None => out.push_str("{}"),
                 }
             } else {
+                out.loss(model, id, LossKind::LostStretch);
                 write_arrow_fallback(model, *symbol, *over, *under, out);
             }
         }
@@ -515,7 +639,10 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             }
             // Neither direction is a no-op with no LaTeX spelling; the body
             // alone preserves the rendering.
-            (false, false) => write(model, *body, context, out),
+            (false, false) => {
+                out.loss(model, id, LossKind::WrapperDropped);
+                write(model, *body, context, out)
+            }
         },
         NodeKind::OverUnder { base, over, under } => {
             if let Some(over) = over {

@@ -19,7 +19,9 @@ pub use commands::{CommandShape, command_shape, command_template, delimiter_symb
 pub use math_core::{Model, Node, NodeId, NodeKind, Span};
 pub use spellings::{Spelling, Spellings};
 pub use writer::{
-    to_latex, to_latex_with_spans, to_latex_with_spans_and_spellings, to_latex_with_spellings,
+    LossKind, WriteLoss, WriteReport, to_latex, to_latex_with_report, to_latex_with_spans,
+    to_latex_with_spans_and_report, to_latex_with_spans_and_spellings, to_latex_with_spellings,
+    to_latex_with_spellings_and_report,
 };
 
 /// A parsed formula with the source it came from.
@@ -42,6 +44,12 @@ impl Document {
     /// has the shape that token described.
     pub fn to_latex(&self) -> String {
         to_latex_with_spellings(&self.model, self.model.root(), &self.spellings)
+    }
+
+    /// The same output as [`Document::to_latex`], plus the places the writer
+    /// had to approximate a model state with no exact spelling.
+    pub fn to_latex_with_report(&self) -> (String, WriteReport) {
+        writer::to_latex_with_spellings_and_report(&self.model, self.model.root(), &self.spellings)
     }
 
     /// Whether anything failed: a diagnostic or an `Error` node. A host uses
