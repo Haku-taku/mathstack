@@ -108,6 +108,8 @@ pub fn command_template(name: &str) -> Option<String> {
         // The four empty prefix arguments leave a plain fraction; the parser
         // resolves `\genfrac` into the same fraction node `\frac` produces.
         CommandShape::Special if name == "genfrac" => Some("\\genfrac{}{}{}{}{}{}".to_owned()),
+        // The parser's empty `\substack{}` has no row; the editor opens one.
+        CommandShape::Special if name == "substack" => Some("\\substack{}".to_owned()),
         CommandShape::MathArgument
         | CommandShape::VariantArgument
         | CommandShape::OptionalMathArgument

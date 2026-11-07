@@ -796,6 +796,15 @@ fn an_empty_genfrac_puts_the_caret_in_the_numerator() {
 }
 
 #[test]
+fn an_empty_substack_opens_its_first_cell() {
+    let mut editor = editor("");
+    press_command(&mut editor, "substack");
+    press(&mut editor, Key::Character(' '));
+    press(&mut editor, Key::Character('a'));
+    assert_eq!(editor.source(), "\\substack {a}");
+}
+
+#[test]
 fn an_empty_pmod_puts_the_caret_in_its_argument() {
     let mut editor = editor("");
     press_command(&mut editor, "pmod");

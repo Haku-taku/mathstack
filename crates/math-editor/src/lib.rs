@@ -1721,6 +1721,13 @@ impl Editor {
                 self.anchor = None;
                 return true;
             }
+            if let Some((node, slot, slot_index)) = self.open_empty_table(*node) {
+                self.caret = self
+                    .boundary_path(node, slot, slot_index)
+                    .unwrap_or_else(|| self.caret.clone());
+                self.anchor = None;
+                return true;
+            }
             if let Some((node, slot, slot_index)) = first_empty_slot(&self.model, *node) {
                 self.caret = self
                     .boundary_path(node, slot, slot_index)
@@ -1734,6 +1741,27 @@ impl Editor {
             .unwrap_or_else(|| self.caret.clone());
         self.anchor = None;
         false
+    }
+
+    /// An empty table has no cell for the caret. Add the first row and cell so
+    /// a template such as `\substack{}` lands somewhere editable.
+    fn open_empty_table(&mut self, table: NodeId) -> Option<(NodeId, Slot, usize)> {
+        match self.model.try_kind(table)? {
+            NodeKind::Table { rows, .. } if rows.is_empty() => {}
+            _ => return None,
+        }
+        let cell = self.model.alloc_with_origin(
+            NodeKind::Row(Vec::new()),
+            Span::default(),
+            Origin::Synthetic,
+        );
+        let row = self.model.alloc_with_origin(
+            NodeKind::TableRow { cells: vec![cell] },
+            Span::default(),
+            Origin::Synthetic,
+        );
+        self.model.insert_existing(table, Slot::Row, 0, row).ok()?;
+        Some((cell, Slot::Body, 0))
     }
 
     /// The row and index an insertion at the caret should use. A caret in a

@@ -1593,6 +1593,10 @@ fn command_shapes_describe_what_the_parser_expects() {
         command_template("genfrac").as_deref(),
         Some("\\genfrac{}{}{}{}{}{}")
     );
+    assert_eq!(
+        command_template("substack").as_deref(),
+        Some("\\substack{}")
+    );
     assert_eq!(command_shape("mathstrut"), CommandShape::None);
     assert_eq!(command_shape("mathchoice"), CommandShape::Special);
     assert_eq!(command_shape("colorbox"), CommandShape::Special);

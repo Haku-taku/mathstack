@@ -71,13 +71,15 @@ environment name, a length, a relation symbol, or a special form the generic
 template cannot express. The editor uses that table instead of keeping its own
 command list; `command_template` derives the empty-argument snippet only for
 shapes whose empty form is meaningful. Font arguments, `\text`,
-`\operatorname`/`\operatornamewithlimits`, `\pmod` and `\genfrac` have a
-template because their arguments end in editable nodes or are consumed by the
-parser; `\begin`, `\hspace` and `\substack` have none because their arguments
-are not (an environment name, a length or a table row has no node the caret can
-enter). `\genfrac`'s six groups collapse into the same `Fraction` node
-`\frac` produces, so the template leaves the caret in the numerator and the
-writer spells the result as a fraction.
+`\operatorname`/`\operatornamewithlimits`, `\pmod`, `\genfrac` and
+`\substack` have a template because their arguments end in editable nodes or
+are consumed by the parser; `\begin` and `\hspace` have none because an
+environment name and a length have no node the caret can enter. `\genfrac`'s
+six groups collapse into the same `Fraction` node `\frac` produces, so the
+template leaves the caret in the numerator and the writer spells the result as
+a fraction. `\substack{}` parses to a table with no rows, so the editor adds
+the first row and cell before placing the caret; the environment spelling is
+copied, and export keeps `\substack`.
 
 Commands whose next token is a delimiter consume the key that ends the
 buffer instead of parsing a bare command:
@@ -260,7 +262,8 @@ host depends on:
   cross-model copy and the empty-slot caret;
 - `an_empty_text_command_puts_the_caret_inside`,
   `an_empty_operatorname_puts_the_caret_in_the_name`,
-  `an_empty_genfrac_puts_the_caret_in_the_numerator` and
+  `an_empty_genfrac_puts_the_caret_in_the_numerator`,
+  `an_empty_substack_opens_its_first_cell` and
   `an_empty_pmod_puts_the_caret_in_its_argument` — templates insert the empty
   container the caret can enter; the pmod case also pins that glue stays in the
   row's child list, so a geometry index matches the model index after a space;
@@ -447,7 +450,7 @@ another key. This is a manual check, not a golden-image gate.
 
 - Command arguments beyond the template list; a full command palette and
   argument placeholders. Keystroke entry does not cover environment names
-  (`\begin`), lengths (`\hspace`) or `\substack` rows.
+  (`\begin`) or lengths (`\hspace`).
 - Incremental layout; the editor relayouts the whole formula per edit, which
   the M5 budget measurements justify at this scale.
 - Browser hosts and the visual golden-image gate. The native window is the
