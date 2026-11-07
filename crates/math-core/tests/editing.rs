@@ -77,6 +77,37 @@ fn replacing_a_node_keeps_the_subtrees_it_still_refers_to() {
 }
 
 #[test]
+fn set_root_frees_the_old_tree_and_refuses_a_stale_root() {
+    let (mut model, root) = Model::build(|m| {
+        let a = m.symbol('a');
+        let b = m.symbol('b');
+        m.row(vec![a, b])
+    });
+    let NodeKind::Row(children) = model.kind(root) else {
+        panic!("expected a row");
+    };
+    let (a, b) = (children[0], children[1]);
+    let new_root = model
+        .insert(
+            root,
+            Slot::Body,
+            0,
+            NodeKind::Row(Vec::new()),
+            Span::default(),
+        )
+        .expect("the old root accepts a new subtree");
+
+    model.set_root(new_root).expect("the new root is live");
+    assert!(model.is_alive(new_root));
+    assert!(!model.is_alive(root), "the old root is unreachable");
+    assert!(!model.is_alive(a) && !model.is_alive(b));
+    assert_eq!(model.len(), 1);
+    assert!(model.try_kind(root).is_none());
+
+    assert_eq!(model.set_root(root), Err(EditError::NoSuchNode));
+}
+
+#[test]
 fn removing_a_required_child_is_refused() {
     let (mut model, root) = Model::build(|m| {
         let a = m.symbol('a');

@@ -199,7 +199,7 @@ fn copying_a_parsed_subtree_preserves_its_structure() {
     let copied = target.copy_subtree(&document.model, document.root(), Default::default(), {
         Origin::Synthetic
     });
-    target.set_root(copied);
+    target.set_root(copied).expect("the copied root is live");
     assert_eq!(
         to_latex(&target, target.root()),
         to_latex(&document.model, document.root())

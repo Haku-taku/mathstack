@@ -818,8 +818,36 @@ impl Model {
         self.root
     }
 
-    pub fn set_root(&mut self, root: NodeId) {
+    /// Replaces the root and frees every node the new tree no longer reaches,
+    /// including the old root. A stale id is refused rather than making it the
+    /// root of an empty model.
+    pub fn set_root(&mut self, root: NodeId) -> Result<(), EditError> {
+        if !self.is_alive(root) {
+            return Err(EditError::NoSuchNode);
+        }
         self.root = root;
+        self.free_unreachable();
+        Ok(())
+    }
+
+    /// Frees nodes outside the root's subtree so their ids can be reused.
+    fn free_unreachable(&mut self) {
+        let mut reachable = vec![false; self.nodes.len()];
+        let mut stack = vec![self.root];
+        while let Some(id) = stack.pop() {
+            let index = id.index();
+            if !self.is_alive(id) || reachable[index] {
+                continue;
+            }
+            reachable[index] = true;
+            stack.extend(self.kind(id).children().into_iter().map(|child| child.id));
+        }
+        for (index, reachable) in reachable.iter().enumerate() {
+            if self.alive[index] && !*reachable {
+                self.alive[index] = false;
+                self.free.push(NodeId(index as u32));
+            }
+        }
     }
 
     pub fn alloc(&mut self, kind: NodeKind, span: Span) -> NodeId {
@@ -839,9 +867,19 @@ impl Model {
         id
     }
 
+    /// The node, or `None` when `id` was freed. A host that keeps ids across
+    /// edits should use this rather than [`Model::node`].
+    pub fn try_node(&self, id: NodeId) -> Option<&Node> {
+        self.is_alive(id).then(|| &self.nodes[id.index()])
+    }
+
+    /// The node for an id the caller knows is live; reading a freed id is an
+    /// invariant violation.
     pub fn node(&self, id: NodeId) -> &Node {
-        debug_assert!(self.is_alive(id), "read a freed node");
-        &self.nodes[id.index()]
+        match self.try_node(id) {
+            Some(node) => node,
+            None => panic!("read a freed node"),
+        }
     }
 
     /// Whether `id` still names a node; a freed id may be reused later.
@@ -849,8 +887,15 @@ impl Model {
         self.alive.get(id.index()).copied().unwrap_or(false)
     }
 
+    pub fn try_kind(&self, id: NodeId) -> Option<&NodeKind> {
+        self.try_node(id).map(|node| &node.kind)
+    }
+
     pub fn kind(&self, id: NodeId) -> &NodeKind {
-        &self.node(id).kind
+        match self.try_kind(id) {
+            Some(kind) => kind,
+            None => panic!("read a freed node"),
+        }
     }
 
     pub fn span(&self, id: NodeId) -> Span {

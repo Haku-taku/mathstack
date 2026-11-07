@@ -55,11 +55,14 @@ design document carries a `## Corrections` paragraph.
 - **An unknown accent symbol writes `\hat`.** The writer has no diagnostic
   channel, and the parser never produces an accent outside the table; the
   fallback is documented at the writer arm.
-- **`Model::set_root` does not free the old tree**, and `Model::node` on a
-  freed id is a release-mode panic. `NodeId` is private and cannot be forged
-  from input, so both need an internal stale reference; the editor's
-  snapshot/delete tests do not cover freeing a node while a caret path still
-  refers to it. No API change was made in this pass.
+- **`Model::set_root` and stale ids — resolved.** `set_root` now returns
+  `EditError::NoSuchNode` for a freed root and frees every node the new root no
+  longer reaches, so the old tree cannot accumulate; `try_node`/`try_kind`
+  give a host an `Option` for an id it kept across edits.
+  `node`/`kind` still panic on a freed id because they are the trusted
+  invariant path used by layout and the editor; a host-facing accessor must
+  use the `try_` forms. `set_root_frees_the_old_tree_and_refuses_a_stale_root`
+  fails if the freeing or the refusal disappears.
 - **Top-level `\\`/`\newline`/`\par` stay unmodelled** by the decision recorded
   in `m5-long-tail.md`; a one-column table is not an equivalent model.
 - **The color name table is closed at 27 names.** KaTeX passes any CSS keyword
