@@ -440,36 +440,48 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                 write_argument(model, *choice, out);
             }
         }
-        NodeKind::UnderArrow { symbol, body } => {
-            push_command(
-                out,
-                match symbol {
-                    '\u{2190}' => "underleftarrow",
-                    _ => "underrightarrow",
-                },
-            );
-            write_argument(model, *body, out);
-        }
+        NodeKind::UnderArrow { symbol, body } => match symbol {
+            '\u{2190}' => {
+                push_command(out, "underleftarrow");
+                write_argument(model, *body, out);
+            }
+            '\u{2192}' => {
+                push_command(out, "underrightarrow");
+                write_argument(model, *body, out);
+            }
+            // No stretched-under command for this arrow: keep the symbol
+            // under the body, losing only the stretch.
+            _ => {
+                push_command(out, "underset");
+                write_symbol_argument(*symbol, out);
+                write_argument(model, *body, out);
+            }
+        },
         NodeKind::Arrow {
             symbol,
             over,
             under,
         } => {
-            push_command(
-                out,
-                match symbol {
-                    '\u{2190}' => "xleftarrow",
-                    _ => "xrightarrow",
-                },
-            );
-            if let Some(under) = under {
-                out.push('[');
-                write(model, *under, Context::Argument, out);
-                out.push(']');
-            }
-            match over {
-                Some(over) => write_argument(model, *over, out),
-                None => out.push_str("{}"),
+            if matches!(symbol, '\u{2190}' | '\u{2192}') {
+                push_command(
+                    out,
+                    if *symbol == '\u{2190}' {
+                        "xleftarrow"
+                    } else {
+                        "xrightarrow"
+                    },
+                );
+                if let Some(under) = under {
+                    out.push('[');
+                    write(model, *under, Context::Argument, out);
+                    out.push(']');
+                }
+                match over {
+                    Some(over) => write_argument(model, *over, out),
+                    None => out.push_str("{}"),
+                }
+            } else {
+                write_arrow_fallback(model, *symbol, *over, *under, out);
             }
         }
         NodeKind::HorizontalBrace { body, over } => {
@@ -974,6 +986,47 @@ fn write_declaration_body(model: &Model, body: NodeId, context: Context, out: &m
         out.push('}');
     } else {
         write(model, body, Context::Argument, out);
+    }
+}
+
+/// A braced argument holding a bare symbol, for commands that take a math
+/// argument but have no node for the symbol.
+fn write_symbol_argument(symbol: char, out: &mut Output<'_>) {
+    out.push('{');
+    write_symbol(symbol, out);
+    out.push('}');
+}
+
+/// Writes an arrow with no `\x…arrow` command: `\overset`/`\underset` keep the
+/// symbol and both labels, losing only the horizontal stretch.
+fn write_arrow_fallback(
+    model: &Model,
+    symbol: char,
+    over: Option<NodeId>,
+    under: Option<NodeId>,
+    out: &mut Output<'_>,
+) {
+    match (over, under) {
+        (Some(over), Some(under)) => {
+            push_command(out, "overset");
+            write_argument(model, over, out);
+            out.push('{');
+            push_command(out, "underset");
+            write_argument(model, under, out);
+            write_symbol_argument(symbol, out);
+            out.push('}');
+        }
+        (Some(over), None) => {
+            push_command(out, "overset");
+            write_argument(model, over, out);
+            write_symbol_argument(symbol, out);
+        }
+        (None, Some(under)) => {
+            push_command(out, "underset");
+            write_argument(model, under, out);
+            write_symbol_argument(symbol, out);
+        }
+        (None, None) => write_symbol(symbol, out),
     }
 }
 

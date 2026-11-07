@@ -266,7 +266,9 @@ below a full-size `lim`, adds only descent, and the wrapper supplies the
 operator class. Reusing `Arrow` would have made `\varinjlim` a relation and
 lifted `lim` off the baseline, so `UnderArrow` stretches the arrow across the
 body, clears it by the bar gap, and centres it under a body laid out at full
-size.
+size. Only ←/→ are written back as `\underleftarrow`/`\underrightarrow`;
+another symbol in a host-built node falls back to `\underset{symbol}{body}`,
+which keeps the symbol and loses only the stretch.
 
 `Document::to_latex` prints the written command back through the
 `DecoratedOperator` spelling, which re-checks the wrapper class, the limits and
@@ -365,7 +367,9 @@ assembly's parts along x.
   movable limits.
 
 Both fall back to the plain glyph and a diagnostic when the face has no arrow
-or brace glyph.
+or brace glyph. The writer spells `Arrow` as `\xleftarrow`/`\xrightarrow` only
+for ←/→; another symbol falls back to `\overset`/`\underset` around it, keeping
+the symbol and labels at the cost of the stretch.
 
 ## Verification
 
@@ -445,6 +449,9 @@ or brace glyph.
   blue frame rules after them.
 - `hspace_resolves_em_ex_and_mu_units` pins the three unit conversions and a
   negative length; changing the `mu` scale makes it fail.
+- `a_foreign_arrow_keeps_its_symbol_and_labels` pins that `Arrow`/`UnderArrow`
+  with `⇒` writes `\overset`/`\underset` around the symbol; the old fallback
+  substituted `→`.
 - `a_no_op_cancel_or_smash_writes_its_body_alone` pins that a `Cancel` or
   `Smash` with no flagged dimension exports its body without a command; writing
   any command form would draw a line or smash both extents.
@@ -536,6 +543,12 @@ edits, `Origin::Macro` and the `Composition` node are in
   the vertical order directly, and
   `varlim_commands_are_display_limit_operators` fails if the decoration is
   anything else.
+- **A host-built arrow silently changed its symbol.** The writer emitted
+  `\xrightarrow`/`\xleftarrow` (and `\under…`) for every symbol, so a model
+  built with `⇒` came back as `→`. Only ←/→ have those commands; another symbol
+  now writes `\overset`/`\underset` around it, keeping the labels and symbol
+  but not the stretch. `a_foreign_arrow_keeps_its_symbol_and_labels` fails if
+  the substitution returns.
 - **`\displaylimits` is not "reset to the operator's table default".** It
   selects display placement, so on `\int` it must be written back: canonical
   output that dropped every `Default { true }` suffix read back as side scripts.

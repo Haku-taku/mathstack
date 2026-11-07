@@ -845,6 +845,30 @@ fn a_no_op_cancel_or_smash_writes_its_body_alone() {
 }
 
 #[test]
+fn a_foreign_arrow_keeps_its_symbol_and_labels() {
+    let (under, root) = Model::build(|m| {
+        let x = m.symbol('x');
+        m.alloc(
+            NodeKind::UnderArrow {
+                symbol: '⇒',
+                body: x,
+            },
+            Span::default(),
+        )
+    });
+    assert_eq!(to_latex(&under, root), "\\underset {⇒}{x}");
+
+    let (arrow, root) = Model::build(|m| {
+        let a = m.symbol('a');
+        let b = m.symbol('b');
+        m.arrow('⇒', Some(a), Some(b))
+    });
+    let written = to_latex(&arrow, root);
+    assert_eq!(written, "\\overset {a}{\\underset {b}{⇒}}");
+    assert!(!parse(&written).has_errors(), "{written}");
+}
+
+#[test]
 fn operator_suffixes_select_the_limits_placement() {
     let document = parse("\\int\\limits_0^1");
     let NodeKind::Scripts { base, .. } = document
