@@ -103,10 +103,11 @@ reports it, rather than restoring the snapshot and losing the keystrokes.
 
 Whitespace between a delimiter command and its fence is ignored, as in LaTeX.
 A `\right` or `\middle` without an enclosing `\left` removes the buffer and
-reports it. Commands whose argument is text or a name — font commands such as
-`\mathbb`, `\text`, `\operatorname`, `\begin`, `\hspace`, `\genfrac`,
-`\substack` and `\pmod` — still reject keystroke entry and restore the
-snapshot, because the model has no editable node for that argument.
+reports it. Font commands such as `\mathbb` insert a `Variant` container with
+an empty body and put the caret inside it. Commands whose argument is text or a
+name — `\text`, `\operatorname`, `\begin`, `\hspace`, `\genfrac`, `\substack`
+and `\pmod` — still reject keystroke entry and restore the snapshot, because
+the model has no editable node for that argument.
 
 ### Rows the editor creates
 
@@ -416,8 +417,8 @@ another key. This is a manual check, not a golden-image gate.
 
 - Command arguments beyond the template list; a full command palette and
   argument placeholders. Keystroke entry does not cover name or text arguments
-  (`\mathbb`, `\text`, `\operatorname`, `\begin`, `\hspace`, `\genfrac`,
-  `\substack`, `\pmod`) or `\operatorname*`'s star.
+  (`\text`, `\operatorname`, `\begin`, `\hspace`, `\genfrac`, `\substack`,
+  `\pmod`) or `\operatorname*`'s star.
 - Incremental layout; the editor relayouts the whole formula per edit, which
   the M5 budget measurements justify at this scale.
 - Browser hosts and the visual golden-image gate. The native window is the

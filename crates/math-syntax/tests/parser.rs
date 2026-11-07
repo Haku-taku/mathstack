@@ -188,6 +188,11 @@ fn write_dump(model: &Model, id: NodeId, out: &mut String) {
             write_dump(model, *body, out);
             out.push(')');
         }
+        NodeKind::Variant { variant, body } => {
+            out.push_str(&format!("Variant({variant:?},"));
+            write_dump(model, *body, out);
+            out.push(')');
+        }
         NodeKind::Color { color, body } => {
             out.push_str(&format!("Color({color:?},"));
             write_dump(model, *body, out);
@@ -1062,7 +1067,10 @@ fn macros_expand_to_the_model() {
     };
     assert!(matches!(
         model.kind(*base),
-        NodeKind::Atom(atom) if atom.symbol == 'R' && atom.variant == Variant::DoubleStruck
+        NodeKind::Variant {
+            variant: Variant::DoubleStruck,
+            body,
+        } if matches!(model.kind(*body), NodeKind::Atom(atom) if atom.symbol == 'R')
     ));
     assert!(sup.is_some());
 
@@ -1519,7 +1527,7 @@ fn command_shapes_describe_what_the_parser_expects() {
     assert_eq!(command_shape("hat"), CommandShape::MathArgument);
     assert_eq!(command_template("hat").as_deref(), Some("\\hat{}"));
     assert_eq!(command_shape("mathbb"), CommandShape::VariantArgument);
-    assert_eq!(command_template("mathbb"), None);
+    assert_eq!(command_template("mathbb").as_deref(), Some("\\mathbb{}"));
     assert_eq!(command_shape("left"), CommandShape::Delimiter);
     assert_eq!(command_shape("bigl"), CommandShape::Delimiter);
     assert_eq!(command_shape("sqrt"), CommandShape::OptionalMathArgument);

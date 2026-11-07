@@ -80,8 +80,6 @@ struct Parser<'a> {
     diagnostics: Vec<Diagnostic>,
     nodes: usize,
     over_budget: bool,
-    /// The alphabet selected by the enclosing font command.
-    variant: Variant,
     /// How many `\left` bodies enclose the current position.
     left_depth: usize,
     spellings: Spellings,
@@ -100,7 +98,6 @@ pub(crate) fn parse(
         diagnostics,
         nodes: 0,
         over_budget: false,
-        variant: Variant::Normal,
         left_depth: 0,
         spellings: Spellings::default(),
     };
@@ -596,10 +593,7 @@ impl Parser<'_> {
         let atom = match token.kind {
             TokenKind::Symbol(symbol) => {
                 self.advance();
-                self.make(
-                    NodeKind::Atom(Atom::with_variant(symbol, self.variant)),
-                    token.span,
-                )
+                self.make(NodeKind::Atom(Atom::new(symbol)), token.span)
             }
             TokenKind::Error(raw) => {
                 self.advance();
@@ -1228,13 +1222,12 @@ impl Parser<'_> {
             _ => {
                 self.advance();
                 if let Some(variant) = symbols::font_command(name) {
-                    let previous = self.variant;
-                    self.variant = variant;
-                    let argument = self.parse_argument(depth + 1, &format!("\\{name}"));
-                    self.variant = previous;
-                    let end = self.span_of(argument).end.max(span.end);
-                    self.model.set_span(argument, Span::new(span.start, end));
-                    argument
+                    let body = self.parse_argument(depth + 1, &format!("\\{name}"));
+                    let end = self.span_of(body).end.max(span.end);
+                    self.make(
+                        NodeKind::Variant { variant, body },
+                        Span::new(span.start, end),
+                    )
                 } else if let Some(symbol) = symbols::accent(name) {
                     let base = self.parse_argument(depth + 1, &format!("\\{name}"));
                     let end = self.span_of(base).end.max(span.end);
@@ -1288,10 +1281,7 @@ impl Parser<'_> {
                         span,
                     )
                 } else if let Some(symbol) = symbols::command_char(name) {
-                    self.make(
-                        NodeKind::Atom(Atom::with_variant(symbol, self.variant)),
-                        span,
-                    )
+                    self.make(NodeKind::Atom(Atom::new(symbol)), span)
                 } else {
                     let raw = format!("\\{name}");
                     self.unknown_command(span, format!("unknown command {raw}"));

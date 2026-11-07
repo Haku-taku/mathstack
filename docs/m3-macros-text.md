@@ -39,14 +39,17 @@ retained.
 
 ## Font variants
 
-`Atom { symbol, class, variant }`; `variant` is one of `Normal`, `Upright`,
-`Bold`, `Italic`, `BoldItalic`, `Script`, `Fraktur`, `DoubleStruck`,
-`SansSerif`, `Monospace`. Commands: `\mathrm`, `\mathbf`, `\mathit`,
-`\mathsf`, `\mathtt`, `\mathcal`, `\mathbb`, `\mathfrak`, `\boldsymbol`,
-`\mathnormal`.
+`Variant { variant, body }` is an editable container node; `variant` is one of
+`Normal`, `Upright`, `Bold`, `Italic`, `BoldItalic`, `Script`, `Fraktur`,
+`DoubleStruck`, `SansSerif`, `Monospace`. Commands: `\mathrm`, `\mathbf`,
+`\mathit`, `\mathsf`, `\mathtt`, `\mathcal`, `\mathbb`, `\mathfrak`,
+`\boldsymbol`, `\mathnormal`. An `Atom` may still carry a variant of its own
+for an API-built tree.
 
-- The parser applies a command's variant to everything it parses inside the
-  argument; nested commands override it.
+- The parser wraps the whole argument, so `\mathbb{R}` and `\mathbb{ab}` keep a
+  body the editor can enter and extend. Nested commands are nested containers.
+- Layout inherits the innermost container's variant; an atom that already names
+  a variant keeps it, so an inner command overrides an outer one.
 - Layout resolves in this order: the variant's Unicode codepoint if the face has
   it, the base symbol for non-`Normal` variants, then the Mathematical Italic
   form for ordinary letters. `Normal` and `Upright` have no variant codepoint:
@@ -56,9 +59,8 @@ retained.
   `\mathbb{R}` is U+211D, `\mathcal{B}` U+212C, `\mathcal{e}` U+212F).
 - Greek and symbols with no styled codepoint fall back to the base glyph rather
   than inventing one.
-- The writer wraps each non-`Normal` atom in its command. Because the parser
-  unwraps a one-child argument, `\mathbb{R}` round-trips exactly; a group's
-  atoms each get their own wrapper, which reparses to the same variants.
+- The writer emits the container's command once around its argument:
+  `\mathbb {R}`. A `Normal` container has no command and writes its body alone.
 
 ## Accents
 
@@ -233,6 +235,13 @@ belong to M5's long tail.
 
 ## Corrections
 
+- **A font command was not an editable group.** The parser applied the variant
+  to each atom and returned the argument, so `\mathbb{ab}` became two unrelated
+  atoms and the editor had no body to enter, extend or delete as a unit. It is
+  now `Variant { variant, body }`; layout inherits the variant unless an atom
+  names one, the writer emits one command around the body, and
+  `a_font_command_wraps_an_editable_body` fails if the template or the
+  container disappears.
 - **A sized delimiter with no command lost its size.** The writer looked up a
   command for the exact (size, class) pair; a class outside Ord/Open/Close/Rel
   has none, so it wrote only the glyph and the delimiter shrank to its natural

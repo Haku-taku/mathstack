@@ -52,6 +52,7 @@ command    := '\frac' argument argument
 | `\frac` | `Fraction { bar: true }` |
 | `\sqrt` | `Radical` |
 | `\left…\right` | `Delimited` |
+| `\mathbb`, `\mathbf`, … | `Variant { variant, body }` |
 | `\sum`, `\int`, … | `LargeOp { symbol, limits: Limits }` |
 | `\sin`, `\lim`, `\argmax`, … | `Function { name, limits: Limits }` |
 | `\operatorname*` / `\operatornamewithlimits` | `Function` with `Default { display_limits: true }` |

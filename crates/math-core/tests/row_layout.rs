@@ -660,6 +660,22 @@ fn variants_resolve_to_their_unicode_block() {
         coded_ids(|m| m.atom(Atom::with_variant('R', Variant::DoubleStruck))),
         vec![12]
     );
+    // A font-command container supplies the variant of its whole body, while
+    // an atom that already names one keeps it.
+    assert_eq!(
+        coded_ids(|m| {
+            let r = m.symbol('R');
+            m.variant(Variant::DoubleStruck, r)
+        }),
+        vec![12]
+    );
+    assert_eq!(
+        coded_ids(|m| {
+            let a = m.atom(Atom::with_variant('A', Variant::Bold));
+            m.variant(Variant::DoubleStruck, a)
+        }),
+        vec![4]
+    );
 }
 
 #[test]

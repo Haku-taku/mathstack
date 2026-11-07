@@ -88,12 +88,13 @@ pub fn delimiter_symbol(name: &str) -> Option<char> {
 }
 
 /// The empty-argument snippet a host may insert for `name`, when the shape
-/// allows one. Variant and name arguments need model support the editor does
-/// not have yet, so they deliberately return `None`.
+/// allows one. A name argument still needs model support the editor does not
+/// have, so it deliberately returns `None`.
 pub fn command_template(name: &str) -> Option<String> {
     match command_shape(name) {
         CommandShape::TwoMathArguments => Some(format!("\\{name}{{}}{{}}")),
         CommandShape::MathArgument
+        | CommandShape::VariantArgument
         | CommandShape::OptionalMathArgument
         | CommandShape::OptionalFlagArgument
         | CommandShape::OptionalUnderArgument => Some(format!("\\{name}{{}}")),

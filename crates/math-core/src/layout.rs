@@ -86,6 +86,8 @@ struct Cx<'a> {
     model: &'a Model,
     /// Reserve a cell for an empty row so an editing host can show its slot.
     placeholders: bool,
+    /// The innermost font command; atoms without their own variant take it.
+    variant: Variant,
 }
 
 /// Lays out `node` at `size` in `style`.
@@ -126,6 +128,7 @@ pub fn layout_with_shaper(
         shaper,
         model,
         placeholders: false,
+        variant: Variant::Normal,
     };
     let mut diagnostics = Vec::new();
     let body = layout_body(&cx, root, size, style, &mut diagnostics);
@@ -148,6 +151,7 @@ pub fn layout_with_shaper_and_geometry(
         shaper,
         model,
         placeholders: true,
+        variant: Variant::Normal,
     };
     let mut diagnostics = Vec::new();
     let body = layout_body(&cx, root, size, style, &mut diagnostics);
@@ -427,6 +431,9 @@ fn layout_kind(
             };
             layout_wrapped(cx, *body, size, forced, diagnostics)
         }
+        NodeKind::Variant { variant, body } => {
+            layout_variant(cx, *variant, *body, size, style, diagnostics)
+        }
         NodeKind::Color { color, body } => {
             layout_color(cx, *color, *body, size, style, diagnostics)
         }
@@ -483,6 +490,26 @@ fn layout_wrapped(
     wrap_transparent(layout_node(cx, body, size, style, diagnostics))
 }
 
+/// Lays the body out with the wrapper's variant as the inherited default.
+/// Atoms that already name a variant keep it, so an inner command wins.
+fn layout_variant(
+    cx: &Cx<'_>,
+    variant: Variant,
+    body: NodeId,
+    size: f32,
+    style: Style,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> MathBox {
+    let inner = Cx {
+        font: cx.font,
+        shaper: cx.shaper,
+        model: cx.model,
+        placeholders: cx.placeholders,
+        variant,
+    };
+    wrap_transparent(layout_node(&inner, body, size, style, diagnostics))
+}
+
 /// Paints the body after laying it out. An inner color has already claimed its
 /// own items, so the outer one fills only what is still uncolored; that is why
 /// no layout function takes a color parameter.
@@ -528,7 +555,12 @@ fn layout_atom(
         crate::style::Size::ScriptScript => 2,
         _ => 0,
     };
-    let Some(base) = resolve_glyph(cx, atom.symbol, atom.variant) else {
+    let variant = if atom.variant == Variant::Normal {
+        cx.variant
+    } else {
+        atom.variant
+    };
+    let Some(base) = resolve_glyph(cx, atom.symbol, variant) else {
         diagnostics.push(Diagnostic::layout(
             span,
             format!("no glyph for U+{:04X}", atom.symbol as u32),
@@ -741,14 +773,12 @@ fn node_class(cx: &Cx<'_>, id: NodeId, style: Style) -> AtomClass {
         NodeKind::Class { class, .. } => *class,
         // A style switch is transparent when it wraps one element, so the
         // spacing either side still sees that element's class.
-        NodeKind::Styled { body, .. } | NodeKind::Color { body, .. } => {
-            match cx.model.kind(*body) {
-                NodeKind::Row(children) if children.len() == 1 => {
-                    node_class(cx, children[0], style)
-                }
-                _ => AtomClass::Ord,
-            }
-        }
+        NodeKind::Styled { body, .. }
+        | NodeKind::Variant { body, .. }
+        | NodeKind::Color { body, .. } => match cx.model.kind(*body) {
+            NodeKind::Row(children) if children.len() == 1 => node_class(cx, children[0], style),
+            _ => AtomClass::Ord,
+        },
         // The selected branch stands in for the whole node, as TeX expands it
         // before spacing is computed.
         NodeKind::MathChoice {

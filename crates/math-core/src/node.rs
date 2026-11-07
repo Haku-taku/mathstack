@@ -4,7 +4,7 @@
 //! identity rather than by walking a value tree. Every node carries the byte
 //! span it came from and where that span came from (source or macro).
 
-use crate::atom::Atom;
+use crate::atom::{Atom, Variant};
 use crate::class::AtomClass;
 use crate::color::Color;
 use crate::span::Span;
@@ -338,6 +338,13 @@ pub enum NodeKind {
         size: Size,
         body: NodeId,
     },
+    /// A font command over an editable body (`\mathbb`, `\mathbf`, …). Atoms
+    /// that carry no variant of their own take this one; an inner command
+    /// overrides an outer one.
+    Variant {
+        variant: Variant,
+        body: NodeId,
+    },
     /// A color over a body: `\textcolor`, or the scope of a `\color`
     /// declaration.
     Color {
@@ -517,6 +524,7 @@ impl NodeKind {
             | NodeKind::Boxed { body }
             | NodeKind::Cancel { body, .. }
             | NodeKind::Styled { body, .. }
+            | NodeKind::Variant { body, .. }
             | NodeKind::Color { body, .. }
             | NodeKind::Class { body, .. }
             | NodeKind::UnderArrow { body, .. } => vec![ChildSlot {
@@ -698,6 +706,10 @@ impl NodeKind {
             },
             NodeKind::Styled { size, body } => NodeKind::Styled {
                 size: *size,
+                body: map(*body),
+            },
+            NodeKind::Variant { variant, body } => NodeKind::Variant {
+                variant: *variant,
                 body: map(*body),
             },
             NodeKind::Color { color, body } => NodeKind::Color {
@@ -1113,6 +1125,7 @@ impl Model {
             | NodeKind::Cancel { body, .. }
             | NodeKind::HorizontalBrace { body, .. }
             | NodeKind::Styled { body, .. }
+            | NodeKind::Variant { body, .. }
             | NodeKind::Color { body, .. }
             | NodeKind::Class { body, .. }
             | NodeKind::UnderArrow { body, .. } => match slot {
@@ -1531,6 +1544,10 @@ impl ModelBuilder {
 
     pub fn styled(&mut self, size: Size, body: NodeId) -> NodeId {
         self.alloc(NodeKind::Styled { size, body }, Span::default())
+    }
+
+    pub fn variant(&mut self, variant: Variant, body: NodeId) -> NodeId {
+        self.alloc(NodeKind::Variant { variant, body }, Span::default())
     }
 
     pub fn color(&mut self, color: Color, body: NodeId) -> NodeId {

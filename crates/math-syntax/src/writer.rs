@@ -379,6 +379,13 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             );
             write_declaration_body(model, *body, context, out);
         }
+        NodeKind::Variant { variant, body } => match symbols::variant_command(*variant) {
+            Some(command) => {
+                push_command(out, command);
+                write_argument(model, *body, out);
+            }
+            None => write(model, *body, context, out),
+        },
         NodeKind::ColorBox {
             background,
             border,

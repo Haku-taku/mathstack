@@ -52,69 +52,12 @@ impl Document {
 }
 
 fn contains_error(model: &Model, id: NodeId) -> bool {
-    match model.kind(id) {
-        NodeKind::Error(_) => true,
-        NodeKind::Row(children) => children.iter().any(|child| contains_error(model, *child)),
-        NodeKind::Scripts { base, sup, sub } => {
-            contains_error(model, *base)
-                || sup.is_some_and(|sup| contains_error(model, sup))
-                || sub.is_some_and(|sub| contains_error(model, sub))
-        }
-        NodeKind::Fraction {
-            numerator,
-            denominator,
-            ..
-        } => contains_error(model, *numerator) || contains_error(model, *denominator),
-        NodeKind::Radical { body, degree } => {
-            contains_error(model, *body)
-                || degree.is_some_and(|degree| contains_error(model, degree))
-        }
-        NodeKind::Delimited { body, .. } | NodeKind::Accent { base: body, .. } => {
-            contains_error(model, *body)
-        }
-        NodeKind::Text(_)
-        | NodeKind::Composition(_)
-        | NodeKind::Atom(_)
-        | NodeKind::LargeOp { .. }
-        | NodeKind::Function { .. }
-        | NodeKind::Space(_)
-        | NodeKind::Hspace(_)
-        | NodeKind::Middle { .. }
-        | NodeKind::SizedDelimiter { .. } => false,
-        NodeKind::Overline { body } | NodeKind::Underline { body } => contains_error(model, *body),
-        NodeKind::Phantom { body, .. }
-        | NodeKind::Smash { body, .. }
-        | NodeKind::ColorBox { body, .. }
-        | NodeKind::Boxed { body }
-        | NodeKind::Cancel { body, .. }
-        | NodeKind::Styled { body, .. }
-        | NodeKind::Color { body, .. }
-        | NodeKind::Class { body, .. }
-        | NodeKind::UnderArrow { body, .. } => contains_error(model, *body),
-        NodeKind::Arrow { over, under, .. } => {
-            over.is_some_and(|over| contains_error(model, over))
-                || under.is_some_and(|under| contains_error(model, under))
-        }
-        NodeKind::HorizontalBrace { body, .. } => contains_error(model, *body),
-        NodeKind::Table { rows, .. } => rows.iter().any(|row| contains_error(model, *row)),
-        NodeKind::TableRow { cells } => cells.iter().any(|cell| contains_error(model, *cell)),
-        NodeKind::OverUnder { base, over, under } => {
-            contains_error(model, *base)
-                || over.is_some_and(|over| contains_error(model, over))
-                || under.is_some_and(|under| contains_error(model, under))
-        }
-        NodeKind::MathChoice {
-            display,
-            text,
-            script,
-            script_script,
-        } => {
-            contains_error(model, *display)
-                || contains_error(model, *text)
-                || contains_error(model, *script)
-                || contains_error(model, *script_script)
-        }
-    }
+    matches!(model.kind(id), NodeKind::Error(_))
+        || model
+            .kind(id)
+            .children()
+            .iter()
+            .any(|child| contains_error(model, child.id))
 }
 
 pub fn parse(source: &str) -> Document {

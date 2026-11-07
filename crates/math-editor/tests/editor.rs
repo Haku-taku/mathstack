@@ -84,6 +84,28 @@ fn a_fraction_command_puts_the_caret_in_the_numerator() {
 }
 
 #[test]
+fn a_font_command_wraps_an_editable_body() {
+    let mut editor = editor("");
+    press_command(&mut editor, "mathbb");
+    press(&mut editor, Key::Character(' '));
+    assert_eq!(editor.source(), "\\mathbb {}");
+    press(&mut editor, Key::Character('R'));
+    assert_eq!(editor.source(), "\\mathbb {R}");
+
+    let root = editor.model().root();
+    let NodeKind::Row(children) = editor.model().kind(root) else {
+        panic!("expected a row");
+    };
+    assert!(matches!(
+        editor.model().kind(children[0]),
+        NodeKind::Variant {
+            variant: math_core::Variant::DoubleStruck,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn a_script_shortcut_wraps_the_previous_symbol() {
     let mut editor = editor("x");
     press(&mut editor, Key::Character('^'));
