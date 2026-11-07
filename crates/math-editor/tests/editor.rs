@@ -270,6 +270,19 @@ fn a_cut_selection_round_trips_through_the_clipboard() {
 }
 
 #[test]
+fn a_declaration_inserted_mid_row_keeps_its_scope() {
+    for (snippet, expected) in [
+        ("\\color{red}y", "a\\color{red}{y}b"),
+        ("\\displaystyle y", "a\\displaystyle {y}b"),
+    ] {
+        let mut editor = editor("ab");
+        press(&mut editor, Key::Left);
+        assert!(editor.insert_latex(snippet, &FakeFont));
+        assert_eq!(editor.source(), expected, "{snippet}");
+    }
+}
+
+#[test]
 fn synthetic_nodes_get_spans_in_the_exported_source() {
     let mut editor = editor("a");
     press(&mut editor, Key::Character('b'));

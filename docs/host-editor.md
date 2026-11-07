@@ -243,6 +243,9 @@ host depends on:
   export, cut of whole structures, and reinsert through the parser;
 - `exported_spans_cover_the_text_each_node_wrote` — writer offsets slice the
   emitted atom and fraction text;
+- `a_declaration_inserted_mid_row_keeps_its_scope` — a `\color` declaration or
+  style switch inserted between two atoms exports braces around its body, so
+  the following atom is not recolored or restyled on reparse;
 - `synthetic_nodes_get_spans_in_the_exported_source` — a typed node's span
   follows it when text is inserted before it;
 - `empty_required_slots_get_placeholders` — empty numerator and denominator

@@ -18,7 +18,15 @@ use math_core::{
 enum Context {
     Top,
     Item,
+    /// An item with a sibling after it: a declaration must close its scope.
+    ItemBeforeSibling,
     Argument,
+}
+
+impl Context {
+    fn item(self) -> bool {
+        matches!(self, Context::Item | Context::ItemBeforeSibling)
+    }
 }
 
 pub fn to_latex(model: &Model, root: NodeId) -> String {
@@ -113,28 +121,25 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                 out.push('{');
                 out.push_str(&name);
                 out.push('}');
-                for child in children {
-                    write(model, *child, Context::Item, out);
-                }
+                write_row_children(model, children, out);
                 push_command(out, "end");
                 out.push('{');
                 out.push_str(&name);
                 out.push('}');
             } else {
-                let braces = context == Context::Item;
+                let braces = context.item();
                 if braces {
                     out.push('{');
                 }
-                for child in children {
-                    write(model, *child, Context::Item, out);
-                }
+                write_row_children(model, children, out);
                 if braces {
                     out.push('}');
                 }
             }
         }
         NodeKind::Scripts { base, sup, sub } => {
-            write(model, *base, Context::Item, out);
+            // A declaration base keeps its body out of the script.
+            write(model, *base, Context::ItemBeforeSibling, out);
             if let Some(sub) = sub {
                 out.push('_');
                 write_argument(model, *sub, out);
@@ -362,9 +367,7 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                     Size::ScriptScript => "scriptscriptstyle",
                 },
             );
-            // The body is the rest of the group, so its braces are the
-            // enclosing row's, not its own.
-            write(model, *body, Context::Argument, out);
+            write_declaration_body(model, *body, context, out);
         }
         NodeKind::ColorBox {
             background,
@@ -397,9 +400,7 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
         NodeKind::Color { color, body } => match out.spelling(model, id) {
             Some(text) => {
                 out.push_token(&text);
-                // A declaration's body is the rest of the group, so its braces
-                // are the enclosing row's, not its own.
-                write(model, *body, Context::Argument, out);
+                write_declaration_body(model, *body, context, out);
             }
             None => {
                 push_command(out, "textcolor");
@@ -945,6 +946,29 @@ fn cases_environment(
 ///
 /// A synthetic row is an editor's typing container, not a group the source
 /// wrote, so its braces must not multiply.
+fn write_row_children(model: &Model, children: &[NodeId], out: &mut Output<'_>) {
+    for (index, child) in children.iter().enumerate() {
+        let context = if index + 1 == children.len() {
+            Context::Item
+        } else {
+            Context::ItemBeforeSibling
+        };
+        write(model, *child, context, out);
+    }
+}
+
+/// A declaration's body is the rest of the group, so it needs braces only
+/// when a sibling follows and would otherwise fall inside its scope.
+fn write_declaration_body(model: &Model, body: NodeId, context: Context, out: &mut Output<'_>) {
+    if context == Context::ItemBeforeSibling {
+        out.push('{');
+        write(model, body, Context::Argument, out);
+        out.push('}');
+    } else {
+        write(model, body, Context::Argument, out);
+    }
+}
+
 fn write_argument(model: &Model, id: NodeId, out: &mut Output<'_>) {
     let single_row = matches!(model.kind(id), NodeKind::Row(children) if children.len() == 1)
         && !matches!(model.node(id).origin, Origin::Synthetic);

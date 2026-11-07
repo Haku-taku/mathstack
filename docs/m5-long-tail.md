@@ -182,7 +182,12 @@ default for uncolored items, so the demo, which paints through `math-svg`,
 needs no separate color path.
 
 `Document::to_latex` keeps a `\color` declaration as `\color{name}` through a
-spelling that matches the node's color. `\textcolor` has no spelling because
+spelling that matches the node's color. A declaration's body is the rest of its
+group, so the writer leaves it unbraced only while it is the last item of its
+row; when a sibling follows — a fragment inserted or pasted mid-row — the body
+is wrapped in braces so the scope ends there. A style switch follows the same
+rule, and a script base is written as if a sibling followed, keeping the script
+out of a declaration's body. `\textcolor` has no spelling because
 its canonical form already is the braced command. Canonical output writes every
 color as `\textcolor{…}{…}`; a declaration over a single item keeps that item
 as its body, so the braced form re-parses to the same tree. The wrapper counts
@@ -483,6 +488,12 @@ edits, `Origin::Macro` and the `Composition` node are in
   `colorbox_background_sits_behind_the_text_and_the_border_keeps_its_color`
   fails if the background stops preceding the content or the frame takes the
   background color.
+- **A declaration written unbraced assumed it was last in its row.** Inserting
+  or pasting `\color{red}y` between two atoms produced `a\color{red}yb`, whose
+  reparse colors `b` too. The writer now wraps a declaration body in braces
+  whenever a sibling follows, and writes a script base as if one did; the style
+  switch uses the same rule. `a_declaration_inserted_mid_row_keeps_its_scope`
+  fails without the braces (previously it exported `a\color{red}yb`).
 - **A style switch could not stay a sibling of the next one.** Colors exposed
   the old rule: closing the previous switch when a new one starts loses scope
   for a `\color` that spans the boundary. Declarations are now a stack closed
