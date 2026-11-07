@@ -830,6 +830,21 @@ fn a_colorbox_without_a_body_writes_an_error_back() {
 }
 
 #[test]
+fn a_no_op_cancel_or_smash_writes_its_body_alone() {
+    let (cancel, root) = Model::build(|m| {
+        let x = m.symbol('x');
+        m.cancel(x, false, false)
+    });
+    assert_eq!(to_latex(&cancel, root), "x");
+
+    let (smash, root) = Model::build(|m| {
+        let x = m.symbol('x');
+        m.smash(x, false, false)
+    });
+    assert_eq!(to_latex(&smash, root), "x");
+}
+
+#[test]
 fn operator_suffixes_select_the_limits_placement() {
     let document = parse("\\int\\limits_0^1");
     let NodeKind::Scripts { base, .. } = document

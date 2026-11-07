@@ -344,15 +344,20 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
                 write_argument(model, *body, out);
             }
         },
-        NodeKind::Smash { body, top, bottom } => {
-            push_command(out, "smash");
-            if *top && !*bottom {
-                out.push_str("[t]");
-            } else if !*top && *bottom {
-                out.push_str("[b]");
+        NodeKind::Smash { body, top, bottom } => match (*top, *bottom) {
+            // No flag to smash is a no-op; `\smash` without a flag would smash
+            // both dimensions, so the body alone is the faithful spelling.
+            (false, false) => write(model, *body, context, out),
+            (top, bottom) => {
+                push_command(out, "smash");
+                if top && !bottom {
+                    out.push_str("[t]");
+                } else if !top && bottom {
+                    out.push_str("[b]");
+                }
+                write_argument(model, *body, out);
             }
-            write_argument(model, *body, out);
-        }
+        },
         NodeKind::Boxed { body } => {
             push_command(out, "boxed");
             write_argument(model, *body, out);
@@ -471,18 +476,23 @@ fn write(model: &Model, id: NodeId, context: Context, out: &mut Output<'_>) {
             push_command(out, if *over { "overbrace" } else { "underbrace" });
             write_argument(model, *body, out);
         }
-        NodeKind::Cancel { body, up, down } => {
-            push_command(
-                out,
-                match (*up, *down) {
-                    (true, true) => "xcancel",
-                    (true, false) => "cancel",
-                    (false, true) => "bcancel",
-                    (false, false) => "",
-                },
-            );
-            write_argument(model, *body, out);
-        }
+        NodeKind::Cancel { body, up, down } => match (*up, *down) {
+            (true, true) => {
+                push_command(out, "xcancel");
+                write_argument(model, *body, out);
+            }
+            (true, false) => {
+                push_command(out, "cancel");
+                write_argument(model, *body, out);
+            }
+            (false, true) => {
+                push_command(out, "bcancel");
+                write_argument(model, *body, out);
+            }
+            // Neither direction is a no-op with no LaTeX spelling; the body
+            // alone preserves the rendering.
+            (false, false) => write(model, *body, context, out),
+        },
         NodeKind::OverUnder { base, over, under } => {
             if let Some(over) = over {
                 push_command(out, "overset");

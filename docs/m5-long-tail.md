@@ -344,7 +344,9 @@ The display list had glyphs and axis-aligned rules only. A cancellation is a
 diagonal, so it gained `Item::Line(LineItem)`; `math-svg` paints it as a stroked
 `<line>`. `Cancel { body, up, down }` draws the body then one or both diagonals
 across its box, with a 0.04em stroke. `\cancel`, `\bcancel` and `\xcancel` are
-the three flag combinations.
+the three flag combinations. Neither direction is a no-op with no LaTeX
+spelling; like a `Smash` with neither flag, the writer emits the body alone
+rather than a command that would draw or smash something the model does not.
 
 ## Horizontal stretch
 
@@ -443,6 +445,9 @@ or brace glyph.
   blue frame rules after them.
 - `hspace_resolves_em_ex_and_mu_units` pins the three unit conversions and a
   negative length; changing the `mu` scale makes it fail.
+- `a_no_op_cancel_or_smash_writes_its_body_alone` pins that a `Cancel` or
+  `Smash` with no flagged dimension exports its body without a command; writing
+  any command form would draw a line or smash both extents.
 - `cancel_draws_one_diagonal_per_direction` pins the single-line and both-line
   forms and the direction of each diagonal; swapping the endpoints fails it.
 - `genfrac_uses_its_rule_thickness_and_style` pins a 10pt custom rule, no rule,
