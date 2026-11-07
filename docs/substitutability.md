@@ -151,10 +151,11 @@ long-tail symbols, and the MathML/event/full-TeX surfaces.
 
 **Capability is not just a report any more.** The crabsnap-ng UI now runs this
 stack: `ui-math` parses with `math-syntax`, lays out with `math-core`, and
-converts to `ui_core::Formula`, including stroked lines for `\cancel`. The
-remaining integration work is structural editing and the Markdown editing
-modes, not the rendering path. `ui-integration.md` records the seam, the
-mapping and what is left.
+converts to `ui_core::Formula`, including stroked lines for `\cancel`. Structural
+editing is wired for the display control through `Math::editable()`, which
+drives a `math-editor` instance behind the engine's `MathEdit` door; the
+Markdown editing modes and inline formulas are still unwired. `ui-integration.md`
+records the seam, the mapping and what is left.
 
 The exclusions are boundaries, not missing polish: a MathML front end, an
 event API, a TeX engine and the complete KaTeX surface are different products.

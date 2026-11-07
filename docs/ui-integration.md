@@ -90,9 +90,12 @@ by source anyway.
 
 ## Remaining gaps
 
-- Structural editing is not wired to the UI yet (7.5), and neither are the
-  Markdown source/popover modes (7.6) or the editable-container entries (7.7).
-  The pipeline replacement is complete without them.
+- Structural editing is wired to the display control (7.5): `Math::editable()`
+  in `crabsnap-ng` focuses a formula, routes keys, text and preedit to a
+  `math-editor` instance the text pass keeps per node, paints the caret,
+  selection and empty slots from the same layout, and reports the new source to
+  the app. Inline formulas, the Markdown source/popover modes (7.6) and the
+  editable-container entries (7.7) are not wired.
 - The editor cannot yet reach environments that take their own arguments
   (`array`, `matrix*`, `alignat`), and an environment name or `\hspace` length
   cannot be edited after insertion. `\pmod` exports as its expansion, so its
